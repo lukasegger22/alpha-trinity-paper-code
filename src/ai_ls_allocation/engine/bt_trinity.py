@@ -140,8 +140,52 @@ def run_trinity_engine():
     # Wir gewichten beide Meinungen.
     # 50% Makro, 50% Chart
     print("   >>> ⚖️  Fusing Signals (50% Macro / 50% Neural)...")
-    full_df['ensemble_signal'] = (full_df['pred_macro'] * 0.5) + (full_df['pred_neural'] * 0.5)
     
+    # 1. Roh-Signal
+    raw_signal = (full_df['pred_macro'] * 0.5) + (full_df['pred_neural'] * 0.5)
+    
+    # 2. Alpha-Scaling
+    scaled_signal = raw_signal * 100.0
+    
+    # --- NEU: VIX REGIME FILTER (Die Notbremse) ---
+    # Wir holen uns die VIX Spalte aus dem DataFrame
+    # (Wir haben VIX ja im Panel als Feature, aber hier müssen wir aufpassen:
+    # Die Features im 'full_df' heißen 'VIX'. Wir nutzen das Level.)
+    
+    # Logik: 
+    # VIX < 20: Alles normal (Faktor 1.0)
+    # VIX 20-28: Vorsicht (Faktor 0.5 - halbe Positionen)
+    # VIX > 28: PANIK (Faktor 0.0 - alles verkaufen/Cash)
+    
+    def apply_vix_filter(row):
+        vix = row['VIX']
+        if vix > 28.0:
+            return 0.0  # Markt ist zu gefährlich -> Cash
+        elif vix > 20.0:
+            return 0.5  # Markt ist nervös -> Halbes Risiko
+        else:
+            return 1.0  # Feuer frei
+            
+    # Wir wenden den Filter an (Vektorisiert ist schneller, aber apply ist lesbarer hier)
+    # Da apply langsam sein kann bei 80k Zeilen, nutzen wir numpy where für Speed
+    import numpy as np
+    
+    # Standard: Volle Power
+    vix_multiplier = np.ones(len(full_df))
+    
+    # Vorsicht bei VIX > 20
+    vix_multiplier = np.where(full_df['VIX'] > 20, 0.5, vix_multiplier)
+    
+    # Stopp bei VIX > 28
+    vix_multiplier = np.where(full_df['VIX'] > 28, 0.0, vix_multiplier)
+    
+    # Signal dämpfen
+    filtered_signal = scaled_signal * vix_multiplier
+    
+    # 3. Smoothing (wie vorher, aber auf dem gefilterten Signal)
+    full_df['ensemble_signal'] = full_df.groupby('symbol')['pred_neural'].transform(
+        lambda x: (filtered_signal.loc[x.index]).ewm(span=2).mean()
+    )
     # Shift zurücknehmen (Vorhersage war für t+1)
     # Wir wollen heute handeln basierend auf der Vorhersage für morgen.
     

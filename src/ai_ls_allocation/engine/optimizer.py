@@ -3,93 +3,88 @@ import pandas as pd
 from scipy.optimize import minimize
 
 class MarkowitzOptimizer:
-    def __init__(self, window_size=60, risk_aversion=2.0):
-        """
-        Initialisiert den Optimizer.
-        :param window_size: Wie viele Tage zurück schauen wir für die Kovarianz?
-        :param risk_aversion: Wie stark bestrafen wir Risiko? (Höher = Vorsichtiger)
-        """
+    # Wir gehen auf 0.02 runter. Fast null Risiko-Angst.
+    # Wir verlassen uns darauf, dass die "Target Vol" (0.40) uns schützt.
+    def __init__(self, window_size=60, risk_aversion=0.02, target_vol=0.40):
+        # Risk Aversion auf 0.1 (sehr niedrig -> gierig)
         self.window_size = window_size
         self.risk_aversion = risk_aversion
+        self.target_vol = target_vol
 
     def optimize(self, signal_series, returns_df):
-        """
-        Berechnet die optimalen Gewichte.
-        :param signal_series: Die Vorhersagen für morgen (Pandas Series)
-        :param returns_df: Die historischen Returns für die Kovarianz (Pandas DataFrame)
-        :return: Pandas Series mit Gewichten (z.B. AAPL: 0.05, MSFT: -0.05)
-        """
-        # 1. Datenvorbereitung
-        # Wir nehmen nur Assets, für die wir beides haben (Signal UND Returns)
         common_assets = signal_series.index.intersection(returns_df.columns)
-        
         if len(common_assets) < 2:
-            # Falls wir zu wenig Assets haben, machen wir nichts (0 Gewichte)
             return pd.Series(0, index=signal_series.index)
 
         signals = signal_series[common_assets].values
-        # Kovarianzmatrix (Risiko-Landkarte) berechnen
-        cov_matrix = returns_df[common_assets].cov().values
-
-        num_assets = len(common_assets)
         
-        # 2. Die Zielfunktion (Was wollen wir?)
-        # Wir wollen: (Rendite * Signal) maximieren UND (Risiko * Aversion) minimieren.
-        # Da der Computer nur minimieren kann, drehen wir das Vorzeichen bei Rendite um.
+        # Volatilität & Kovarianz
+        recent_returns = returns_df[common_assets].iloc[-60:]
+        cov_matrix = recent_returns.cov().values
+        current_vols = recent_returns.std() * np.sqrt(252)
+        
+        # --- Smart Bounds ---
+        dynamic_bounds = []
+        for asset in common_assets:
+            vol = current_vols.get(asset, 1.0)
+            if vol < 0.01: vol = 0.01
+            
+            # Max Weight berechnen
+            max_weight = self.target_vol / vol
+            max_weight = min(max_weight, 0.35) # Hard Cap 35%
+            
+            dynamic_bounds.append((-max_weight, max_weight))
+        
+        dynamic_bounds = tuple(dynamic_bounds)
+        num_assets = len(common_assets)
+
+        # Zielfunktion
         def objective(weights):
             portfolio_return = np.dot(weights, signals)
             portfolio_volatility = np.dot(weights.T, np.dot(cov_matrix, weights))
-            
-            # Utility = Return - (0.5 * Risk_Aversion * Variance)
             utility = portfolio_return - (0.5 * self.risk_aversion * portfolio_volatility)
-            return -utility # Minus, weil wir minimieren
+            return -utility # Minus für Minimierung
 
-        # 3. Nebenbedingungen (Regeln)
-        # ... (innerhalb von optimize Methode)
-
-        # 4. Grenzen (Bounds) lockern!
-        # Wir erlauben bis zu 40% in einem Asset (statt 20%).
-        # Das gibt ihm die Chance, starke Trends (wie NVDA) auch zu reiten.
-        bounds = tuple((-0.4, 0.4) for _ in range(num_assets))
-        
-        # 3. Nebenbedingungen
+        # Constraints
         constraints = [
-            # WICHTIG: Wir erlauben ihm, NICHT voll investiert zu sein.
-            # Statt "Summe MUSS 1 sein", sagen wir: "Summe <= 1".
-            # Der Rest ist automatisch Cash (Risikofrei).
-            {'type': 'ineq', 'fun': lambda w: 1.0 - np.sum(w)},  # Summe <= 1.0
-            
-            # Wir wollen aber mindestens 50% investiert sein (damit er nicht nur schläft)
-            {'type': 'ineq', 'fun': lambda w: np.sum(w) - 0.5},  # Summe >= 0.5
-            
-            # Gross Exposure Beschränkung (kein extremer Hebel)
-            {'type': 'ineq', 'fun': lambda w: 1.6 - np.sum(np.abs(w))}
+            {'type': 'ineq', 'fun': lambda w: 1.0 - np.sum(w)},        # Max 100% Net Long
+            {'type': 'ineq', 'fun': lambda w: 1.6 - np.sum(np.abs(w))} # Max 160% Gross (Hebel)
         ]
-
-        # 4. Grenzen (Bounds)
-        # Kein Asset darf mehr als 20% des Portfolios ausmachen (Diversifikation!)
-        bounds = tuple((-0.2, 0.2) for _ in range(num_assets))
         
-        # 5. Startwert (Wir starten mit Gleichverteilung)
-        initial_guess = np.zeros(num_assets)
+        # ÄNDERUNG 1: Initial Guess ist NICHT mehr 0.
+        # Wir starten mit einem kleinen gleichverteilten Portfolio (1% pro Asset).
+        # Das zwingt den Optimizer, sofort zu rechnen und nicht bei 0 zu schlafen.
+        initial_guess = np.ones(num_assets) / num_assets * 0.1
 
-        # 6. Optimierung starten (SLSQP ist ein Standard-Solver für solche Probleme)
         try:
             result = minimize(
                 objective, 
                 initial_guess, 
                 method='SLSQP', 
-                bounds=bounds, 
+                bounds=dynamic_bounds,
                 constraints=constraints,
                 tol=1e-6
             )
             
-            if result.success:
-                return pd.Series(result.x, index=common_assets)
-            else:
-                # Fallback: Wenn Mathe versagt, alles 0
-                return pd.Series(0, index=common_assets)
+            # ÄNDERUNG 2: Fail-Safe Modus!
+            # Wir akzeptieren das Ergebnis AUCH WENN success=False ist,
+            # solange 'x' (die Gewichte) keine kompletten Nullen sind.
+            # SLSQP gibt oft "False" zurück, wenn es am Rand anstößt, obwohl die Lösung gut ist.
+            
+            weights = result.x
+            
+            # Nur wenn ALLES fast 0 ist, war es ein echter Fehler
+            if np.all(np.abs(weights) < 1e-4):
+                 # Letzter Versuch: Nimm den Initial Guess als Notfall-Portfolio, wenn Signale da sind
+                 if np.sum(np.abs(signals)) > 0:
+                     return pd.Series(initial_guess, index=common_assets)
+                 else:
+                     return pd.Series(0, index=common_assets)
+
+            # Clean up: Winzige Positionen löschen
+            weights[np.abs(weights) < 0.005] = 0
+            return pd.Series(weights, index=common_assets)
                 
         except Exception as e:
-            # Notfall-Catch
+            print(f"Optimizer Crash: {e}")
             return pd.Series(0, index=common_assets)

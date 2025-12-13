@@ -51,7 +51,7 @@ def run_simulation():
     # Transaktionskosten simulieren (vereinfacht 5 Basispunkte pro Trade)
     # Wir berechnen die Veränderung der Gewichte (Turnover)
     turnover = (signals - shifted_signals).abs().sum(axis=1)
-    costs = turnover * 0.0005 
+    costs = turnover * 0.0010
     
     strategy_net_returns = strategy_daily_returns - costs
     
