@@ -1,19 +1,33 @@
-etf:
-  symbols:
-    # ETFs (Market Proxy)
-    - SPY
-    - QQQ
-    - GLD
-    # Crypto
-    - BTC-USD
-    # Stocks (Alpha)
-    - AAPL
-    - MSFT
-    - NVDA
-    - AMZN
-    - GOOGL
-    - META
-    - JPM
-    - JNJ
-  start: "2010-01-01"
-  end: "today"
+universe:
+  # --- 1. The Market Anchors (Indizes) ---
+  - SPY       # S&P 500 (Basis)
+  - QQQ       # Nasdaq (Tech-Basis)
+  - IWM       # Small Caps (Wenn die Wirtschaft boomt)
+  - EEM       # Emerging Markets (Wachstum außerhalb USA)
+  - VGK       # Europa (Diversifikation)
+
+  # --- 2. The Magnificent Tech (Growth Engines) ---
+  - NVDA      # AI Hardware King
+  - MSFT      # Software/Cloud King
+  - GOOGL     # Data/AI King
+  - META      # Social/Ads King
+  - AMZN      # E-Commerce/Cloud
+  - TSLA      # EV/Robotik (Wildcard)
+  - PLTR      # AI Software (High Volatility Play)
+
+  # --- 3. The Defenders (Safety & Stability) ---
+  - JPM       # Finanzen (Profitiert von hohen Zinsen)
+  - JNJ       # Healthcare (Fels in der Brandung)
+  - XOM       # Energie (Schutz gegen Inflation)
+  - BRK-B     # Berkshire Hathaway (Qualität/Value)
+  - LMT       # Lockheed Martin (Verteidigung/Geopolitik)
+
+  # --- 4. Macro & Hedges (Versicherung) ---
+  - GLD       # Gold (Angst-Währung)
+  - SLV       # Silber
+  - USO       # Öl (Energie-Preise)
+  - TLT       # Staatsanleihen (Zins-Wette)
+
+  # --- 5. Crypto (Asymmetric Upside) ---
+  - BTC-USD   # Digitales Gold
+  - ETH-USD   # Tech-Crypto

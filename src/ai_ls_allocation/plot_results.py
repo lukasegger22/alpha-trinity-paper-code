@@ -1,69 +1,71 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mtick
+import seaborn as sns
 from pathlib import Path
 
-# Config
-REPORTS_DIR = Path("reports")
-FILE_TS = REPORTS_DIR / "bt_neural_timeseries.csv"
-FILE_W = REPORTS_DIR / "bt_neural_weights.csv"
+# --- PFADE ---
+FEATURE_DIR = Path("data/features")
+REPORT_DIR = Path("reports")
+HISTORY_PATH = FEATURE_DIR / "trinity_history.parquet"
+PRICES_PATH = FEATURE_DIR / "panel.parquet"
 
-def main():
-    if not FILE_TS.exists():
-        print(f"File not found: {FILE_TS}")
-        return
+def plot_dashboard():
+    print("--- 🎨 Generating Strategy Dashboard ---")
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Daten laden
-    df = pd.read_csv(FILE_TS, parse_dates=["date"]).set_index("date")
-    weights = pd.read_csv(FILE_W, parse_dates=["date"]).set_index("date")
-
-    # Exposure berechnen (Wie viel % waren wir investiert?)
-    # Summe der absoluten Gewichte
-    exposure = weights.abs().sum(axis=1)
-
-    # Setup Plot (3 untereinander)
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 12), sharex=True, gridspec_kw={'height_ratios': [3, 1, 1.5]})
+    # 1. Gewichte (Positionen) laden
+    if not HISTORY_PATH.exists():
+        raise FileNotFoundError("Run bt_trinity.py first!")
     
-    # --- 1. Equity Curve ---
-    ax1.plot(df.index, df["equity"], label="Neural Strategy (Net)", color="#1f77b4", linewidth=2)
-    ax1.set_title("Milestone 1: Neural GRU Strategy (Signal-to-Noise Sizing)", fontsize=14, fontweight="bold")
-    ax1.set_ylabel("Equity ($1 start)")
-    ax1.grid(True, alpha=0.3)
-    ax1.legend(loc="upper left")
+    weights = pd.read_parquet(HISTORY_PATH)
+    weights.index = pd.to_datetime(weights.index)
     
-    # Benchmark Vergleich (optional, falls SPY Daten da sind)
-    # ax1.plot(spy_data, label="SPY Benchmark", color="gray", alpha=0.5, linestyle="--")
-
-    # --- 2. Drawdown ---
-    # Drawdown berechnen: (Equity / Peak) - 1
-    dd = (df["equity"] / df["equity"].cummax()) - 1
-    ax2.fill_between(dd.index, dd, 0, color="red", alpha=0.3, label="Drawdown")
-    ax2.set_ylabel("Drawdown")
-    ax2.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
-    ax2.grid(True, alpha=0.3)
-    ax2.legend(loc="lower left")
-
-    # --- 3. Exposure (Der Beweis für Smart Sizing) ---
-    ax3.fill_between(exposure.index, exposure, 0, color="green", alpha=0.2, label="Gross Exposure (Invested %)")
-    ax3.plot(exposure.index, exposure, color="green", linewidth=1)
+    # 2. Performance berechnen (gleiche Logik wie Simulation)
+    panel = pd.read_parquet(PRICES_PATH)
+    if 'Date' in panel.columns:
+        panel['Date'] = pd.to_datetime(panel['Date']).dt.normalize()
     
-    # 100% Linie einzeichnen
-    ax3.axhline(1.0, color="gray", linestyle="--", alpha=0.5)
+    market_returns = panel.pivot(index='Date', columns='symbol', values='returns_1d')
     
-    ax3.set_ylabel("Exposure")
-    ax3.set_xlabel("Date")
-    ax3.yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
-    ax3.set_ylim(0, 1.1) # Max 110% anzeigen
-    ax3.grid(True, alpha=0.3)
-    ax3.legend(loc="upper left")
-    ax3.text(df.index[0], 0.1, "  Low Exposure = High Uncertainty (IQR)", fontsize=9, style='italic')
+    # Sync
+    common_dates = weights.index.intersection(market_returns.index)
+    weights = weights.loc[common_dates]
+    market_returns = market_returns.loc[common_dates]
+    
+    # Shift weights (Trade based on yesterday's decision)
+    shifted_weights = weights.shift(1).fillna(0)
+    
+    # Strategy Returns
+    strat_ret = (shifted_weights * market_returns).sum(axis=1)
+    # Benchmark (Equal Weight)
+    bench_ret = market_returns.mean(axis=1)
+    
+    cum_strat = (1 + strat_ret).cumprod()
+    cum_bench = (1 + bench_ret).cumprod()
 
+    # --- PLOT 1: Performance ---
+    plt.figure(figsize=(14, 7))
+    plt.plot(cum_strat, label='Trinity AI', color='#1f77b4', linewidth=2.5)
+    plt.plot(cum_bench, label='Benchmark (Equal Weight)', color='gray', linestyle='--', alpha=0.6)
+    plt.title('Trinity Strategy vs. Benchmark', fontsize=16)
+    plt.ylabel('Growth of $1')
+    plt.legend(fontsize=12)
+    plt.grid(True, alpha=0.2)
+    plt.savefig(REPORT_DIR / "m1_dashboard.png")
+    print("✅ Dashboard saved to reports/m1_dashboard.png")
+
+    # --- PLOT 2: Positions Heatmap (Das "Röntgenbild") ---
+    # Wir zeigen nur die letzten 50 Tage, damit es lesbar bleibt
+    recent_weights = weights.iloc[-50:].T
+    
+    plt.figure(figsize=(16, 10))
+    sns.heatmap(recent_weights, cmap="RdBu", center=0, annot=False, cbar_kws={'label': 'Position Size'})
+    plt.title('Trinity Positions (Last 50 Days) - Blue=Long, Red=Short', fontsize=16)
+    plt.xlabel('Date')
+    plt.ylabel('Asset')
     plt.tight_layout()
-    
-    out_path = REPORTS_DIR / "m1_dashboard.png"
-    plt.savefig(out_path, dpi=300)
-    print(f"[plot] Saved dashboard to {out_path}")
-    # plt.show() # Optional, falls du es direkt sehen willst
+    plt.savefig(REPORT_DIR / "positions_heatmap.png")
+    print("✅ Heatmap saved to reports/positions_heatmap.png")
 
 if __name__ == "__main__":
-    main()
+    plot_dashboard()
