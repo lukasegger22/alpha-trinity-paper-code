@@ -1,0 +1,19 @@
+etf:
+  symbols:
+    # ETFs (Market Proxy)
+    - SPY
+    - QQQ
+    - GLD
+    # Crypto
+    - BTC-USD
+    # Stocks (Alpha)
+    - AAPL
+    - MSFT
+    - NVDA
+    - AMZN
+    - GOOGL
+    - META
+    - JPM
+    - JNJ
+  start: "2010-01-01"
+  end: "today"

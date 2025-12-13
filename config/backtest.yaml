@@ -1,0 +1,4 @@
+exec_price: "close"
+signal_lag_days: 1
+rebalance_freq: "daily"
+base_currency: "USD"

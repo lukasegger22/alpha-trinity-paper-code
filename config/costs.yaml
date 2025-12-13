@@ -1,0 +1,16 @@
+etf:
+  # pro Seite:
+  commission_bps: 0.2            # war: commission_bps
+  slippage_bps: 1.0              # war: slippage_extra_bps (pro Seite)
+
+  # Spread als ROUNDTRIP (doppelte Half-Spread):
+  spread_bps: 3.0                # 2 * half_spread_bps = 2 * 1.5
+
+  # Borrow p.a. auf Netto-Short-Exposure:
+  borrow_bps_annual: 150         # war: short_borrow_annual_bps
+
+  # Turnover-Limit (Woche):
+  turnover_weekly_budget: 0.6    # war: turnover_weekly_budget
+
+# Ausführungslatenz explizit halten:
+exec_lag_days: 1

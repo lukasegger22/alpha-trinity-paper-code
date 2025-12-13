@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+.env
+
+# Daten ignorieren (User lädt sie via Skript)
+data/
+
+# IDE Settings
+.vscode/
+.idea/
