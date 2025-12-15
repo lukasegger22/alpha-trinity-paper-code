@@ -8,3 +8,4 @@ pyarrow
 fastparquet
 scipy
 joblib
+pyyaml
