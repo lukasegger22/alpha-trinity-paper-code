@@ -5,9 +5,11 @@ import os
 import sys
 import pandas as pd
 import numpy as np
+import random
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPRegressor
+from sklearn.ensemble import RandomForestRegressor
 from ai_ls_allocation.engine.optimizer import MarkowitzOptimizer
 
 # --- ENV VARS ---
@@ -30,9 +32,15 @@ TRAIN_END_DATE = "2024-01-01"
 COST_OF_CARRY_RATE = 0.06     
 REBALANCE_SPEED = 0.20   
 MIN_POSITION_SIZE = 0.03 
+ENSEMBLE_SIZE = 10 
 
-# --- ADVANCED INDICATORS (THE TRAP DETECTORS) 🕵️‍♂️ ---
+# --- GLOBAL SEEDING ---
+np.random.seed(42)
+random.seed(42)
 
+# --- INDICATORS ---
+
+# ZURÜCK ZUM GEWINNER: Efficiency Ratio 🏆
 def calculate_efficiency_ratio(series, window=20):
     direction = series.diff(window).abs()
     volatility = series.diff().abs().rolling(window).sum().replace(0, 0.001)
@@ -45,31 +53,22 @@ def calculate_obv(df):
     direction = np.where(change == 0, 0, direction)
     return (vol * direction).cumsum()
 
-# NEU: Money Flow Index (Volume-weighted RSI)
 def calculate_mfi(df, window=14):
-    # Da wir oft nur Close haben, approximieren wir Typical Price mit Close
     typical_price = df['proxy_price'] 
     money_flow = typical_price * df['Volume']
-    
-    # Positive/Negative Flow
     delta = typical_price.diff()
     pos_flow = pd.Series(np.where(delta > 0, money_flow, 0), index=df.index)
     neg_flow = pd.Series(np.where(delta < 0, money_flow, 0), index=df.index)
-    
     rolling_pos = pos_flow.rolling(window).sum()
     rolling_neg = neg_flow.rolling(window).sum().replace(0, 0.001)
-    
     mfi_ratio = rolling_pos / rolling_neg
     return 100 - (100 / (1 + mfi_ratio))
 
-# NEU: Bollinger Band Position (%B) - Der Gummiband-Effekt
 def calculate_bb_position(series, window=20):
     ma = series.rolling(window).mean()
     std = series.rolling(window).std()
     upper = ma + (2 * std)
     lower = ma - (2 * std)
-    
-    # Wo sind wir? (1.0 = Oben, 0.0 = Unten, >1.0 = Überkauft/Ausbruch)
     bandwidth = (upper - lower).replace(0, 0.001)
     pct_b = (series - lower) / bandwidth
     return pct_b
@@ -80,7 +79,7 @@ def load_data():
     return df
 
 def run_trinity_engine():
-    print(f"\n--- 🚀 STARTING TRINITY ENGINE (Ultimate: MFI + Bollinger + Volume) ---", flush=True)
+    print(f"\n--- 🚀 STARTING TRINITY ENGINE (Restored Champion: Efficiency + Hybrid Ensemble) ---", flush=True)
     print(f"   📅 Training Limit: {TRAIN_END_DATE}")
 
     # 1. Daten laden
@@ -98,23 +97,21 @@ def run_trinity_engine():
     full_df = full_df.drop_duplicates(subset=['Date', 'symbol'], keep='last')
     full_df = full_df.sort_values(by=['symbol', 'Date'])
     
-    start_history = pd.Timestamp(TRAIN_END_DATE) - pd.DateOffset(years=4)
+    start_history = pd.Timestamp(TRAIN_END_DATE) - pd.DateOffset(years=10) 
     full_df = full_df[full_df['Date'] >= start_history].copy()
 
     # --- FEATURE ENGINEERING ---
-    print("   >>> 🛠️  Engineering Trap-Detection Features (MFI, Bollinger)...")
+    print("   >>> 🛠️  Engineering Features (Volume, Traps, Macro)...")
     
     full_df['proxy_price'] = (1 + full_df['returns_1d'])
     full_df['proxy_price'] = full_df.groupby('symbol')['proxy_price'].cumprod()
     
-    # 1. Efficiency
+    # BACK TO EFFICIENCY
     full_df['efficiency'] = full_df.groupby('symbol')['proxy_price'].transform(lambda x: calculate_efficiency_ratio(x, window=20)).fillna(0.5)
     
-    # 2. OBV Trend
     full_df['obv'] = full_df.groupby('symbol').apply(calculate_obv).reset_index(level=0, drop=True)
     full_df['obv_trend'] = full_df.groupby('symbol')['obv'].pct_change(20).fillna(0)
     
-    # 3. VWAP Distance
     def rolling_vwap(x_vol, x_price, w=20):
         pv = x_price * x_vol
         return pv.rolling(w).sum() / x_vol.rolling(w).sum()
@@ -122,11 +119,9 @@ def run_trinity_engine():
     full_df['dist_vwap'] = (full_df['proxy_price'] / full_df['vwap_20']) - 1.0
     full_df['dist_vwap'] = full_df['dist_vwap'].fillna(0)
 
-    # 4. MFI (The Exhaustion Trap Detector) 🆕
     full_df['mfi'] = full_df.groupby('symbol', group_keys=False).apply(lambda x: calculate_mfi(x))
-    full_df['mfi'] = full_df['mfi'].fillna(50) / 100.0 # Skalieren auf 0-1
+    full_df['mfi'] = full_df['mfi'].fillna(50) / 100.0
 
-    # 5. Bollinger Position (The Extension Trap Detector) 🆕
     full_df['bb_pos'] = full_df.groupby('symbol')['proxy_price'].transform(lambda x: calculate_bb_position(x)).fillna(0.5)
 
     # --- MERGING ---
@@ -164,11 +159,10 @@ def run_trinity_engine():
     # --- TRAINING SPLIT ---
     print(f"   >>> ✂️  Splitting Data at {TRAIN_END_DATE}...")
     
-    # DIE LISTE DER WAHRHEIT (8 Features)
+    # Efficiency ist zurück, Hurst ist weg
     features = [
-        'returns_1d', 'returns_5d', 'volatility_60d', 'VIX', # Basic
-        'obv_trend', 'dist_vwap',                            # Volume
-        'mfi', 'bb_pos'                                      # Traps
+        'returns_1d', 'returns_5d', 'volatility_60d', 'VIX', 
+        'obv_trend', 'dist_vwap', 'mfi', 'bb_pos'
     ]
     
     full_df = full_df.drop_duplicates(subset=['Date', 'symbol'], keep='last')
@@ -177,21 +171,35 @@ def run_trinity_engine():
     train_mask = full_df['Date'] < TRAIN_END_DATE
     train_df = full_df[train_mask].dropna(subset=features + ['returns_20d'])
     
-    print(f"   >>> 🧠 Training Neural Network with Features: {len(features)}")
-    scaler = StandardScaler()
-    
     if len(train_df) > 0:
         X_train = train_df[features].values
         y_train = train_df['returns_20d'].shift(-20).fillna(0).values 
         
+        scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train)
-        # Netz größer machen für mehr Features (128 Neuronen)
-        model = MLPRegressor(hidden_layer_sizes=(128, 64), max_iter=300, random_state=42)
-        model.fit(X_train_scaled, y_train)
-        
         X_all = full_df[features].fillna(0).values
         X_all_scaled = scaler.transform(X_all)
-        full_df['pred_neural'] = model.predict(X_all_scaled)
+        
+        # --- HYBRID ENSEMBLE ---
+        print(f"   >>> 🧠 Training Hybrid Ensemble (5x NN + 5x RF)...")
+        ensemble_predictions = np.zeros((len(full_df), ENSEMBLE_SIZE))
+        split_point = ENSEMBLE_SIZE // 2 
+        
+        for i in range(ENSEMBLE_SIZE):
+            seed = 42 + i
+            if i < split_point:
+                print(f"       -> Training Model {i+1} (NN, Seed {seed})...")
+                model = MLPRegressor(hidden_layer_sizes=(128, 64), max_iter=250, random_state=seed, early_stopping=True)
+            else:
+                print(f"       -> Training Model {i+1} (RF, Seed {seed})...")
+                model = RandomForestRegressor(n_estimators=50, max_depth=10, min_samples_leaf=20, random_state=seed, n_jobs=-1)
+            
+            model.fit(X_train_scaled, y_train)
+            ensemble_predictions[:, i] = model.predict(X_all_scaled)
+            
+        full_df['pred_neural'] = np.mean(ensemble_predictions, axis=1)
+        print("       ✅ Hybrid Consensus Calculated.")
+
     else:
         print("❌ Not enough training data!")
         return
@@ -210,7 +218,7 @@ def run_trinity_engine():
     
     full_df['raw_signal'] = full_df['raw_signal'] * sentiment_boost * quality_factor
     
-    # Noise Filter (Efficiency < 0.15)
+    # FILTER: Efficiency < 0.15 (Der Original-Filter)
     full_df['regime_filter'] = np.where(full_df['efficiency'] < 0.15, 0.0, 1.0)
     full_df['raw_signal'] = full_df['raw_signal'] * full_df['regime_filter']
     
@@ -276,7 +284,7 @@ def run_trinity_engine():
         weights_df.to_parquet(SIGNALS_PATH)
         
         print("\n" + "="*40)
-        print("🏁 LIVE PORTFOLIO (Final Master Model)")
+        print(f"🏁 LIVE PORTFOLIO (Final Restored Champion)")
         print("="*40)
         print(f"📅 Date: {weights_df.index[-1].date()}")
         exposure = latest_signal.sum()
