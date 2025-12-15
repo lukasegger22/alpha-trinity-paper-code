@@ -10,4 +10,4 @@ joblib
 pyyaml
 cvxpy
 matplotlib
-alpaca-sdk
+alpaca-py
