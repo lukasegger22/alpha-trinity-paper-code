@@ -1,117 +1,111 @@
-import yaml
 import pandas as pd
 import numpy as np
 from pathlib import Path
 
-# --- PFADE ---
-BASE_DIR = Path("data")
-RAW_DIR = BASE_DIR / "raw"
-FEATURE_DIR = BASE_DIR / "features"
-CONFIG_PATH = Path("config/universes.yaml")
+# --- KONFIGURATION ---
+RAW_DIR = Path("data/raw")
+FEATURE_DIR = Path("data/features")
+FEATURE_DIR.mkdir(parents=True, exist_ok=True)
 
-def load_config():
-    """Lädt die Konfiguration."""
-    if not CONFIG_PATH.exists():
-        raise FileNotFoundError(f"Config not found at {CONFIG_PATH}")
-    with open(CONFIG_PATH, "r") as f:
-        return yaml.safe_load(f)
-
-def load_raw_data(symbol):
-    """Lädt eine einzelne Parquet-Datei."""
-    # Wir müssen aufpassen: Manche Dateien heißen IDX_... (Makro), aber hier
-    # laden wir Aktien. Aktien haben meist normale Namen.
-    # Falls das Symbol ^ enthält (was yfinance macht), wurde es im download.py ersetzt.
-    safe_symbol = symbol.replace("^", "IDX_")
-    path = RAW_DIR / f"{safe_symbol}.parquet"
+def find_file(keyword):
+    """
+    Sucht eine Datei, die das Keyword (z.B. 'VIX') im Namen hat.
+    Das löst das Problem mit ^VIX vs VIX ein für alle Mal.
+    """
+    files = list(RAW_DIR.glob(f"*{keyword}*.parquet"))
+    if not files:
+        raise FileNotFoundError(f"❌ Critical: No file found containing '{keyword}' in {RAW_DIR}")
     
-    if not path.exists():
-        print(f"⚠️ Warning: {path} not found. Skipping.")
-        return None
+    # Nimm die erste, die passt (z.B. ^VIX.parquet)
+    path = files[0]
+    print(f"   -> Found {keyword} data: {path.name}")
     
     df = pd.read_parquet(path)
-    
-    # Sicherstellen, dass wir 'Close' haben
-    if isinstance(df.columns, pd.MultiIndex):
-        try:
-            df = df['Close']
-        except KeyError:
-            df = df.iloc[:, 0] # Fallback
-    elif 'Close' in df.columns:
-        df = df['Close']
-    
-    # In Series umwandeln, falls es ein DataFrame ist
-    if isinstance(df, pd.DataFrame):
-        df = df.iloc[:, 0]
-        
-    return df
+    col = 'Close' if 'Close' in df.columns else 'Adj Close'
+    return df[col]
 
-def calculate_features(price_series):
-    """Berechnet technische Indikatoren für eine Aktie."""
-    df = pd.DataFrame({'close': price_series})
-    
-    # 1. Returns (Renditen)
-    df['returns_1d'] = df['close'].pct_change(1)
-    df['returns_5d'] = df['close'].pct_change(5)
-    df['returns_20d'] = df['close'].pct_change(20)
-    
-    # 2. Volatilität (Rolling Std Dev)
-    df['volatility_20d'] = df['returns_1d'].rolling(20).std()
-    df['volatility_60d'] = df['returns_1d'].rolling(60).std()
-    
-    # 3. Simple Moving Averages (Trend)
-    df['sma_50'] = df['close'].rolling(50).mean()
-    df['sma_200'] = df['close'].rolling(200).mean()
-    
-    # Abstand zum SMA (Trend-Stärke)
-    df['dist_sma200'] = (df['close'] / df['sma_200']) - 1
-    
-    return df
-
-def main():
+def build_features():
     print("--- 3. Building Features (Panel) ---")
-    FEATURE_DIR.mkdir(parents=True, exist_ok=True)
     
-    cfg = load_config()
-    universe = cfg.get("universe", [])
-    
-    print(f"Processing {len(universe)} symbols...")
-    
-    all_features = []
-    
-    for symbol in universe:
-        # 1. Laden
-        prices = load_raw_data(symbol)
-        if prices is None or prices.empty:
-            continue
-            
-        # 2. Features berechnen
-        feat_df = calculate_features(prices)
-        
-        # 3. Symbol und Datum als Spalten hinzufügen (für Panel-Format)
-        feat_df['symbol'] = symbol
-        feat_df = feat_df.reset_index().rename(columns={'index': 'Date', 'Date': 'Date'})
-        
-        # Sicherstellen, dass Date datetime ist
-        feat_df['Date'] = pd.to_datetime(feat_df['Date'])
-        
-        all_features.append(feat_df)
-        
-    if not all_features:
-        print("❌ Error: No features built. Check raw data.")
+    # 1. Macro Daten laden (Intelligente Suche)
+    try:
+        vix = find_file("VIX").rename("VIX")
+        tnx = find_file("TNX").rename("TNX")
+    except FileNotFoundError as e:
+        print(e)
         return
 
-    # 4. Zusammenfügen (Ein riesiges Panel für alle Aktien)
-    full_panel = pd.concat(all_features, ignore_index=True)
+    # 2. Equity Universe laden
+    universe_files = list(RAW_DIR.glob("*.parquet"))
+    # Filtere Macro-Files raus
+    macro_keywords = ["VIX", "TNX", "GSPC"]
+    equity_files = [f for f in universe_files if not any(k in f.name for k in macro_keywords)]
     
-    # NaN entfernen (die ersten 200 Tage fehlen wegen SMA200)
-    full_panel = full_panel.dropna()
+    print(f"Processing {len(equity_files)} symbols...")
     
-    # 5. Speichern
+    all_dfs = []
+    
+    for file_path in equity_files:
+        symbol = file_path.stem.replace("^", "") # Bereinigen
+        
+        try:
+            df = pd.read_parquet(file_path)
+            
+            # Preis-Spalte finden
+            if 'Close' in df.columns:
+                price_col = 'Close'
+            elif 'Adj Close' in df.columns:
+                price_col = 'Adj Close'
+            elif 'close' in df.columns:
+                price_col = 'close'
+            else:
+                continue # Überspringen wenn kein Preis
+            
+            # WICHTIG: 'Close' explizit setzen für Execution System
+            df['Close'] = df[price_col]
+            df = df[['Close']].copy()
+            df['symbol'] = symbol
+            
+            # --- FEATURE ENGINEERING ---
+            df['returns_1d'] = df['Close'].pct_change(1)
+            df['returns_5d'] = df['Close'].pct_change(5)
+            df['returns_20d'] = df['Close'].pct_change(20)
+            df['volatility_60d'] = df['returns_1d'].rolling(60).std() * np.sqrt(252)
+            
+            # Macro Join
+            df = df.join(vix).join(tnx)
+            df['VIX'] = df['VIX'].ffill()
+            df['TNX_Level'] = df['TNX'].ffill()
+            
+            df['TNX_Chg_10d'] = df['TNX_Level'].diff(10)
+            df['Interaction_TNX_Vola'] = df['TNX_Level'] * df['volatility_60d']
+            df['SP500_Trend'] = np.where(df['Close'] > df['Close'].rolling(200).mean(), 1, 0)
+
+            df = df.dropna()
+            
+            cols_to_keep = [
+                'symbol', 'Close', 
+                'returns_1d', 'returns_5d', 'returns_20d', 
+                'volatility_60d', 
+                'VIX', 'TNX_Level', 'TNX_Chg_10d', 'Interaction_TNX_Vola', 'SP500_Trend'
+            ]
+            
+            existing_cols = [c for c in cols_to_keep if c in df.columns]
+            all_dfs.append(df[existing_cols])
+            
+        except Exception as e:
+            print(f"⚠️ Error processing {symbol}: {e}")
+            continue
+
+    if not all_dfs:
+        print("❌ No data processed!")
+        return
+
+    full_panel = pd.concat(all_dfs)
     output_path = FEATURE_DIR / "panel.parquet"
     full_panel.to_parquet(output_path)
-    
     print(f"✅ Panel built with shape {full_panel.shape}")
     print(f"Saved to {output_path}")
 
 if __name__ == "__main__":
-    main()
+    build_features()

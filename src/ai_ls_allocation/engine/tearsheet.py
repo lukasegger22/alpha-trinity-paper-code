@@ -3,108 +3,125 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-# --- PFADE ---
+# --- KONFIGURATION ---
 FEATURE_DIR = Path("data/features")
-REPORT_DIR = Path("reports")
 HISTORY_PATH = FEATURE_DIR / "trinity_history.parquet"
-PRICES_PATH = FEATURE_DIR / "panel.parquet"
+PANEL_PATH = FEATURE_DIR / "panel.parquet"
+REPORT_DIR = Path("reports")
+REPORT_DIR.mkdir(exist_ok=True)
 
-def calculate_max_drawdown(cum_returns):
-    """Berechnet den maximalen Verlust von der Spitze (High Water Mark)."""
-    high_water_mark = cum_returns.cummax()
-    drawdown = (cum_returns - high_water_mark) / high_water_mark
-    return drawdown.min(), drawdown
+# Kosten (Müssen realistisch sein)
+COST_OF_CARRY_RATE = 0.06 # 6% p.a. für Leverage
+TRANSACTION_COST = 0.0010 # 10bps Slippage pro Trade
 
 def generate_tearsheet():
-    print("--- 📑 Generating Institutional Tearsheet ---")
+    print("\n--- 📑 Generating Realistic Tearsheet (With Costs) ---")
     
-    # 1. Daten laden
     if not HISTORY_PATH.exists():
-        raise FileNotFoundError("Run bt_trinity.py first!")
-    
-    weights = pd.read_parquet(HISTORY_PATH)
-    weights.index = pd.to_datetime(weights.index)
-    
-    panel = pd.read_parquet(PRICES_PATH)
-    if 'Date' in panel.columns:
-        panel['Date'] = pd.to_datetime(panel['Date']).dt.normalize()
-    
-    market_returns = panel.pivot(index='Date', columns='symbol', values='returns_1d')
-    
-    # Sync
-    common_dates = weights.index.intersection(market_returns.index)
-    weights = weights.loc[common_dates]
-    market_returns = market_returns.loc[common_dates]
-    
-    # 2. Daily PnL berechnen (Shifted Weights * Returns)
-    # Kosten abziehen (0.10% = 0.0010)
-    shifted_weights = weights.shift(1).fillna(0)
-    turnover = (weights - shifted_weights).abs().sum(axis=1)
-    costs = turnover * 0.0010
-    
-    daily_rets = (shifted_weights * market_returns).sum(axis=1) - costs
-    cum_rets = (1 + daily_rets).cumprod()
-    
-    # 3. KENNZAHLEN (The Metrics that matter)
-    
-    # A. Total Return & CAGR
-    total_ret = (cum_rets.iloc[-1] - 1)
-    days = len(daily_rets)
-    cagr = (1 + total_ret) ** (252 / days) - 1 # Annualized
-    
-    # B. Risiko (Volatilität & Downside)
-    volatility = daily_rets.std() * np.sqrt(252)
-    sharpe = (daily_rets.mean() / daily_rets.std()) * np.sqrt(252)
-    
-    # Sortino Ratio (Nur negative Volatilität zählt)
-    neg_rets = daily_rets[daily_rets < 0]
-    sortino = (daily_rets.mean() / neg_rets.std()) * np.sqrt(252)
-    
-    # C. Drawdown
-    max_dd, dd_series = calculate_max_drawdown(cum_rets)
-    calmar = cagr / abs(max_dd) if max_dd != 0 else 0 # Return pro Drawdown-Einheit
-    
-    # D. Win Rate
-    wins = len(daily_rets[daily_rets > 0])
-    losses = len(daily_rets[daily_rets < 0])
-    win_rate = wins / (wins + losses) if (wins + losses) > 0 else 0
-    
-    # 4. ATTRIBUTION (Woher kam das Geld?)
-    # Wir schauen, welches Asset den meisten Profit gebracht hat
-    asset_pnl = (shifted_weights * market_returns).sum()
-    top_winner = asset_pnl.idxmax()
-    top_loser = asset_pnl.idxmin()
+        print("❌ No history found.")
+        return
 
-    # --- OUTPUT ---
-    print("\n" + "="*40)
-    print(f"   TRINITY STRATEGY TEARSHEET")
-    print("="*40)
-    print(f"Performance:")
-    print(f"  Total Return:    {total_ret*100:.2f}%")
-    print(f"  CAGR (Yearly):   {cagr*100:.2f}%")
-    print(f"  Win Rate:        {win_rate*100:.1f}%  (>50% ist gut)")
-    print("-" * 40)
-    print(f"Risk Management:")
-    print(f"  Sharpe Ratio:    {sharpe:.2f}      (Industry Standard)")
-    print(f"  Sortino Ratio:   {sortino:.2f}     (Nur Downside Risk)")
-    print(f"  Max Drawdown:    {max_dd*100:.2f}%  (Schlimmster Verlust)")
-    print(f"  Calmar Ratio:    {calmar:.2f}      (Return / Drawdown)")
-    print("-" * 40)
-    print(f"Attribution:")
-    print(f"  Best Asset:      {top_winner} (+{asset_pnl[top_winner]*100:.1f}%)")
-    print(f"  Worst Asset:     {top_loser} ({asset_pnl[top_loser]*100:.1f}%)")
-    print("="*40 + "\n")
+    # 1. Daten laden
+    weights = pd.read_parquet(HISTORY_PATH)
+    panel = pd.read_parquet(PANEL_PATH)
     
-    # Plot Drawdown
-    plt.figure(figsize=(10, 4))
-    plt.fill_between(dd_series.index, dd_series, 0, color='red', alpha=0.3)
-    plt.plot(dd_series.index, dd_series, color='red', linewidth=1)
-    plt.title('Underwater Plot (Drawdown)')
-    plt.ylabel('Loss from Peak')
+    # --- BUG FIX: Index in Spalten umwandeln ---
+    panel = panel.reset_index()
+    
+    # Sicherstellen, dass 'Date' existiert
+    if 'Date' not in panel.columns:
+        if 'index' in panel.columns:
+            panel = panel.rename(columns={'index': 'Date'})
+        elif panel.index.name == 'Date':
+             # Falls reset_index nicht gereicht hat (selten)
+             panel['Date'] = panel.index
+    
+    # Falls 'Date' immer noch fehlt, nehmen wir die erste Spalte als Datum an (Fallback)
+    if 'Date' not in panel.columns:
+         # Versuch, MultiIndex zu fixen
+         print("⚠️ Warning: 'Date' column missing. Trying to infer...")
+         # Wenn MultiIndex (Date, symbol), dann sind die jetzt Spalten durch reset_index
+         # Wir schauen, ob eine Spalte wie ein Datum aussieht
+         pass 
+
+    # Returns pivotisieren (Jetzt ist Date sicher eine Spalte)
+    # Wir brauchen 'Date', 'symbol' und 'returns_1d'
+    try:
+        returns = panel.pivot(index='Date', columns='symbol', values='returns_1d').fillna(0)
+    except KeyError as e:
+        print(f"❌ DATA STRUCTURE ERROR: {e}")
+        print("Available columns:", panel.columns)
+        return
+    
+    # Indizes abgleichen (Schnittmenge aus Trade-Tagen und Markt-Daten)
+    common_dates = weights.index.intersection(returns.index)
+    weights = weights.loc[common_dates]
+    returns = returns.loc[common_dates]
+    
+    if len(weights) == 0:
+        print("❌ No overlapping dates found between Weights and Returns!")
+        return
+    
+    # 2. Portfolio Returns berechnen
+    # Portfolio Return = Summe(Gewicht * Return)
+    port_returns = (weights * returns).sum(axis=1)
+    
+    # 3. KOSTEN ABZIEHEN (Der Realitäts-Hammer) 🔨
+    
+    # A. Zinskosten (Cost of Carry)
+    # Wenn Exposure > 1.0 (Leverage), zahlen wir Zinsen auf den geliehenen Teil
+    leverage = weights.sum(axis=1)
+    borrowed_amount = (leverage - 1.0).clip(lower=0) # Alles über 100% ist geliehen
+    interest_cost = (borrowed_amount * COST_OF_CARRY_RATE) / 252 # Täglicher Zins
+    
+    # B. Transaktionskosten (Turnover)
+    turnover = weights.diff().abs().sum(axis=1) # Wie viel haben wir umgeschichtet?
+    trading_cost = turnover * TRANSACTION_COST
+    
+    # Netto Return (Gewinn nach allen Kosten)
+    net_returns = port_returns - interest_cost - trading_cost
+    
+    # 4. Metriken berechnen
+    cum_ret = (1 + net_returns).cumprod()
+    if len(cum_ret) > 0:
+        total_ret = cum_ret.iloc[-1] - 1
+    else:
+        total_ret = 0
+    
+    # Sharpe (Annualisiert)
+    mean_ret = net_returns.mean() * 252
+    volatility = net_returns.std() * np.sqrt(252)
+    sharpe = mean_ret / volatility if volatility > 0 else 0
+    
+    # Drawdown
+    running_max = cum_ret.cummax()
+    drawdown = (cum_ret / running_max) - 1
+    max_dd = drawdown.min()
+    
+    print("-" * 40)
+    print("🏆 TRINITY REALITY CHECK (Out-of-Sample)")
+    print("-" * 40)
+    print(f"📅 Period:       {weights.index[0].date()} to {weights.index[-1].date()}")
+    print(f"💰 Gross Return: {((1+port_returns).cumprod().iloc[-1]-1):.2%}")
+    print(f"💸 Costs (Est.): -{(((1+port_returns).cumprod().iloc[-1]-1) - total_ret):.2%} (Interest + Slippage)")
+    print(f"💎 NET RETURN:   {total_ret:.2%} (Nach allen Kosten)")
+    print(f"⚡ Sharpe Ratio: {sharpe:.2f}")
+    print(f"📉 Max Drawdown: {max_dd:.2%}")
+    print("-" * 40)
+    
+    # Plot
+    plt.figure(figsize=(12, 6))
+    plt.plot(cum_ret, label='Trinity Net Return (Real)', color='blue', linewidth=1.5)
+    plt.plot((1+returns['SPY']).cumprod(), label='S&P 500 (Benchmark)', color='gray', alpha=0.5, linestyle='--')
+    
+    # Drawdown Plot (Rot unten)
+    plt.fill_between(cum_ret.index, cum_ret, 1, alpha=0.05, color='blue')
+    
+    plt.title(f"Trinity Walk-Forward Performance (Sharpe: {sharpe:.2f})")
+    plt.legend()
     plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(REPORT_DIR / "drawdown_chart.png")
-    print(f"📉 Drawdown chart saved to reports/drawdown_chart.png")
+    plt.savefig(REPORT_DIR / "performance_chart.png")
+    print(f"📈 Chart saved to {REPORT_DIR}/performance_chart.png")
 
 if __name__ == "__main__":
     generate_tearsheet()
