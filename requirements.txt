@@ -10,3 +10,4 @@ scipy
 joblib
 pyyaml
 cvxpy
+matplotlib
