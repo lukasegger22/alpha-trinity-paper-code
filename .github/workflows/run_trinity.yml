@@ -1,0 +1,48 @@
+name: Trinity Institutional Bot 🦅
+
+on:
+  schedule:
+    # Montag bis Freitag um 14:30 UTC (15:30 DE/AT - US Markt Start)
+    - cron: '30 14 * * 1-5'
+  workflow_dispatch: # Erlaubt dir, den Bot auch manuell per Klick zu starten
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install alpaca-trade-api yfinance scikit-learn pandas numpy pyarrow fastparquet
+
+    - name: 1. Run Trinity Brain (Data -> AI -> Signals)
+      run: python src/run_pipeline.py
+      # Hier werden keine Keys gebraucht, nur Daten laden und rechnen
+
+    - name: 2. Execute Trades (Send Orders to Alpaca)
+      run: python src/ai_ls_allocation/trading/alpaca_broker.py
+      env:
+        # Hier übergeben wir die Secrets an das Skript
+        ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+        ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        ALPACA_ENDPOINT: ${{ secrets.ALPACA_ENDPOINT }}
+        # Sicherheits-Switch, damit der Bot weiß, dass er in der Cloud ist
+        IS_CLOUD_RUN: "True" 
+
+    - name: Upload Reports (Optional - damit du nachschauen kannst)
+      uses: actions/upload-artifact@v4
+      if: always() # Auch hochladen, wenn ein Fehler passiert
+      with:
+        name: trinity-daily-logs
+        path: |
+          logs/
+          data/trinity_signals.csv
