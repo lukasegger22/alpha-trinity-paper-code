@@ -23,6 +23,7 @@ jobs:
       run: |
         pip install -r requirements.txt
         pip install alpaca-trade-api yfinance scikit-learn pandas numpy pyarrow fastparquet
+        pip install alpha-vantage
 
     - name: 1. Run Trinity Brain (Data -> AI -> Signals)
       run: python src/run_pipeline.py
