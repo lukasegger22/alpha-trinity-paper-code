@@ -29,14 +29,14 @@ jobs:
       # Hier werden keine Keys gebraucht, nur Daten laden und rechnen
 
     - name: 2. Execute Trades (Send Orders to Alpaca)
-      run: python src/ai_ls_allocation/trading/alpaca_broker.py
+      run: python src/ai_ls_allocation/execution.py             # <-- DIESE ZEILE IST KORREKT (Angenommen, es ist execution.py)
       env:
         # Hier übergeben wir die Secrets an das Skript
         ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
         ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
         ALPACA_ENDPOINT: ${{ secrets.ALPACA_ENDPOINT }}
         # Sicherheits-Switch, damit der Bot weiß, dass er in der Cloud ist
-        IS_CLOUD_RUN: "True" 
+        IS_CLOUD_RUN: "True"
 
     - name: Upload Reports (Optional - damit du nachschauen kannst)
       uses: actions/upload-artifact@v4
