@@ -2,6 +2,11 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
+import sys
+
+current_dir = Path(__file__).resolve().parent.parent.parent 
+sys.path.append(str(current_dir))
+
 # --- KONFIGURATION ---
 RAW_DIR = Path("data/raw")
 FEATURE_DIR = Path("data/features")
