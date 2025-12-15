@@ -11,3 +11,4 @@ joblib
 pyyaml
 cvxpy
 matplotlib
+alpha-vantage
