@@ -10,6 +10,9 @@ from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPRegressor
 from sklearn.ensemble import RandomForestRegressor
+
+current_dir = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.append(str(current_dir))
 from ai_ls_allocation.engine.optimizer import MarkowitzOptimizer
 
 # --- ENV VARS ---

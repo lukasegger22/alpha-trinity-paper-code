@@ -1,9 +1,12 @@
 import pandas as pd
+import sys
 import numpy as np
 import joblib
 from pathlib import Path
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_squared_error
+current_dir = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.append(str(current_dir))
 
 # --- KONFIGURATION ---
 FEATURE_DIR = Path("data/features")
