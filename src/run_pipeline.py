@@ -2,15 +2,24 @@ import sys
 import subprocess
 import time
 import logging
-import os  # <--- WICHTIG: os importieren
+import os
 from pathlib import Path
 from datetime import datetime
 
-# --- KONFIGURATION ---
-PROJECT_ROOT = Path(__file__).parent.parent 
-SRC_DIR = Path(__file__).parent
+# --- PFAD-KONFIGURATION (ROBUST FÜR GITHUB & MAC) ---
+# Wir bestimmen den absoluten Pfad zu diesem Skript (src Ordner)
+CURRENT_SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CURRENT_SCRIPT_DIR.parent 
 LOG_DIR = PROJECT_ROOT / "logs"
 PYTHON_EXE = sys.executable 
+
+# Pfade zu den Unter-Skripten definieren (Absolute Pfade!)
+SCRIPT_DATA      = CURRENT_SCRIPT_DIR / "ai_ls_allocation" / "data" / "download.py"
+SCRIPT_FEATURES  = CURRENT_SCRIPT_DIR / "ai_ls_allocation" / "features" / "build.py"
+SCRIPT_MACRO     = CURRENT_SCRIPT_DIR / "ai_ls_allocation" / "models" / "train_xgboost.py"
+SCRIPT_ENGINE    = CURRENT_SCRIPT_DIR / "ai_ls_allocation" / "engine" / "bt_trinity.py"
+SCRIPT_REPORT    = CURRENT_SCRIPT_DIR / "ai_ls_allocation" / "engine" / "tearsheet.py"
+SCRIPT_EXECUTION = CURRENT_SCRIPT_DIR / "ai_ls_allocation" / "execution.py"
 
 # Logging Setup
 LOG_DIR.mkdir(exist_ok=True)
@@ -21,42 +30,50 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(log_filename),
+        logging.StreamHandler(sys.stdout) # Damit man es auch in GitHub Actions sieht
     ]
 )
 
-def run_step(script_relative_path, step_name):
-    script_path = SRC_DIR / script_relative_path
-    
+def run_step(script_path, step_name):
+    # Sicherheits-Check: Existiert die Datei?
+    if not script_path.exists():
+        err_msg = f"❌ CRITICAL ERROR: Script not found at {script_path}"
+        print(err_msg)
+        logging.error(err_msg)
+        sys.exit(1)
+
     header = f"\n{'='*60}\n🚀 STARTING STEP: {step_name}\n   Script: {script_path}\n{'='*60}"
     print(header)
     logging.info(header)
     
     start_time = time.time()
     
-    # --- MAC OS DEADLOCK FIX ---
-    # Wir erstellen eine Kopie der Umgebungsvariablen
+    # --- UMGEBUNGSVARIABLEN SETUP ---
+    # 1. Wir kopieren die aktuellen Variablen (WICHTIG für GitHub Secrets!)
     env_vars = os.environ.copy()
-    # Wir zwingen den Sub-Prozess dazu, Single-Threaded zu laufen
-    # Das verhindert den Konflikt zwischen XGBoost und TensorFlow
+    
+    # 2. Mac/Linux Stabilitäts-Fixes (behalten wir bei, schadet auf GitHub nicht)
     env_vars["OMP_NUM_THREADS"] = "1"
     env_vars["KMP_DUPLICATE_LIB_OK"] = "True"
     env_vars["TF_CPP_MIN_LOG_LEVEL"] = "2"
     
     try:
-        # Popen startet das Skript MIT den neuen Umgebungsvariablen (env=env_vars)
+        # Popen startet das Skript
         process = subprocess.Popen(
             [PYTHON_EXE, str(script_path)],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, 
             text=True,
             bufsize=1,
-            env=env_vars # <--- HIER IST DER SCHLÜSSEL ZUM ERFOLG
+            env=env_vars # Hier übergeben wir Secrets + Fixes
         )
 
+        # Live-Output lesen
         for line in process.stdout:
             print(line, end='') 
-            logging.info(line.strip())
-
+            # Wir loggen nicht jede Zeile in die Datei, sonst wird sie riesig,
+            # aber bei Fehlern sehen wir es im GitHub Output.
+        
         process.wait()
 
         if process.returncode != 0:
@@ -83,23 +100,29 @@ def main():
     
     start_total = time.time()
 
+    # Wir rufen die Schritte jetzt mit den absoluten Pfad-Variablen auf
+    
     # 1. Daten Update 
-    run_step("ai_ls_allocation/data/download.py", "DATA INGESTION")
+    run_step(SCRIPT_DATA, "DATA INGESTION")
     
     # 2. Features 
-    run_step("ai_ls_allocation/features/build.py", "FEATURE ENGINEERING")
+    run_step(SCRIPT_FEATURES, "FEATURE ENGINEERING")
     
     # 3. Makro-Modell 
-    run_step("ai_ls_allocation/models/train_xgboost.py", "MACRO BRAIN TRAINING")
+    run_step(SCRIPT_MACRO, "MACRO BRAIN TRAINING")
     
     # 4. Trinity Engine 
-    run_step("ai_ls_allocation/engine/bt_trinity.py", "TRINITY ENGINE & OPTIMIZATION")
+    run_step(SCRIPT_ENGINE, "TRINITY ENGINE & OPTIMIZATION")
     
     # 5. Tearsheet 
-    run_step("ai_ls_allocation/engine/tearsheet.py", "PERFORMANCE REPORTING")
+    run_step(SCRIPT_REPORT, "PERFORMANCE REPORTING")
 
-    # 6. Execution 
-    run_step("ai_ls_allocation/execution.py", "ORDER GENERATION (OMS)")
+    # 6. Execution (Optional: In GitHub Actions macht das oft der YAML-Step separat,
+    # aber wir lassen es hier drin für lokale Tests. GitHub ignoriert es, 
+    # wenn wir alpaca_broker.py im YAML separat aufrufen, oder wir nehmen es raus.)
+    # HINWEIS: Da wir im YAML 'alpaca_broker.py' separat aufrufen, 
+    # kommentiere ich execution.py HIER aus, damit er nicht 2x handelt!
+    # run_step(SCRIPT_EXECUTION, "ORDER GENERATION (OMS)") 
 
     total_duration = time.time() - start_total
     finish_msg = f"\n{'='*60}\n🎉 PIPELINE FINISHED SUCCESSFULLY in {total_duration:.2f} seconds.\n   Check the log file at: {log_filename}\n{'='*60}"
