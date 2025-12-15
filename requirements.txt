@@ -3,7 +3,6 @@ numpy
 scikit-learn
 xgboost
 yfinance
-alpaca-trade-api
 pyarrow
 fastparquet
 scipy
@@ -11,4 +10,4 @@ joblib
 pyyaml
 cvxpy
 matplotlib
-alpha-vantage
+alpaca-sdk
