@@ -3,7 +3,7 @@ name: Trinity Institutional Bot 🦅
 on:
   schedule:
     # Montag bis Freitag um 14:30 UTC (15:30 DE/AT - US Markt Start)
-    - cron: '30 14 * * 1-5'
+    - cron: '20 14 * * 1-5'
   workflow_dispatch: # Erlaubt dir, den Bot auch manuell per Klick zu starten
 
 jobs:
