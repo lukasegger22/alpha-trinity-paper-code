@@ -1,81 +1,101 @@
-import os
-import yaml
 import yfinance as yf
 import pandas as pd
+import yaml
 from pathlib import Path
-from datetime import datetime
 
-# Wir definieren die Pfade relativ zum Projekt-Root
-# (Geht davon aus, dass wir das Skript vom Root aus starten)
-BASE_DIR = Path("data")
-RAW_DIR = BASE_DIR / "raw"
+# --- KONFIGURATION ---
 CONFIG_PATH = Path("config/universes.yaml")
-
-# --- NEU: Liste der Makro-Indikatoren ---
-# ^VIX = Volatilitäts-Index (Angst-Barometer)
-# ^TNX = 10 Year Treasury Yield (US-Zinsen)
-# ^GSPC = S&P 500 Index (Gesamtmarkt-Referenz)
-MACRO_SYMBOLS = ["^VIX", "^TNX", "^GSPC"]
+DATA_DIR = Path("data")
+PANEL_PATH = DATA_DIR / "panel.parquet" 
 
 def load_universe():
-    """Lädt die Liste der Aktien aus der YAML-Config."""
-    if not CONFIG_PATH.exists():
-        raise FileNotFoundError(f"Config not found at {CONFIG_PATH}")
+    """Lädt die Ticker aus der YAML oder nutzt deine Gewinner-Liste."""
+    tickers = []
     
-    with open(CONFIG_PATH, "r") as f:
-        conf = yaml.safe_load(f)
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                conf = yaml.safe_load(f)
+                tickers = conf.get("universe", [])
+        except Exception as e:
+            print(f"⚠️ Fehler beim Lesen der Config: {e}")
     
-    # Wir nehmen an, dass im YAML eine Liste unter 'universe' steht
-    return conf.get("universe", [])
+    if not tickers:
+        print("⚠️ Config leer/nicht gefunden. Nutze Fallback-Liste.")
+        tickers = [
+            "BTC-USD", "ETH-USD", "NVDA", "TSLA", "MSFT", 
+            "AAPL", "GOOGL", "AMD", "COIN", "META", "AMZN",
+            "SOL-USD", "BNB-USD"
+        ]
+        
+    return list(set(tickers))
 
-def download_data(symbol, start_date="2010-01-01"):
-    """Lädt Daten für ein Symbol und speichert sie als Parquet."""
-    print(f"[download] {symbol} {start_date}->today")
+def download_data():
+    print("--- 📥 TRINITY DATA DOWNLOADER (FINAL FIX) ---")
     
-    # Daten laden
-    df = yf.download(symbol, start=start_date, progress=False)
-    
-    if df.empty:
-        print(f"⚠️ Warning: No data for {symbol}")
+    tickers = load_universe()
+    print(f"   Lade Daten für {len(tickers)} Assets...")
+
+    # 1. Assets herunterladen
+    print("   1. Downloading Asset Prices...")
+    try:
+        df = yf.download(tickers, start="2020-01-01", group_by='ticker', auto_adjust=True, progress=True)
+    except Exception as e:
+        print(f"❌ Critical Download Error: {e}")
         return
 
-    # MultiIndex Problematik bei neuem yfinance beheben
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    # Speichern
-    # Wir ersetzen das ^ Zeichen im Dateinamen, weil das Probleme machen kann
-    safe_symbol = symbol.replace("^", "IDX_") 
-    file_path = RAW_DIR / f"{safe_symbol}.parquet"
+    # Struktur reparieren
+    df = df.stack(level=0) 
+    df.index.names = ['Date', 'symbol']
+    df = df.reset_index()
     
-    df.to_parquet(file_path)
-
-def main():
-    # 1. Ordner erstellen, falls nicht existent
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    # 2. VIX laden
+    print("   2. Downloading VIX (Market Fear Feature)...")
+    vix_df = yf.download("^VIX", start="2020-01-01", auto_adjust=True, progress=False)
     
-    # 2. Aktien-Universum laden
-    universe = load_universe()
-    print(f"Loading Equity Universe: {len(universe)} symbols")
+    # Sicherstellen, dass wir keine Multi-Index Spalten haben
+    if isinstance(vix_df.columns, pd.MultiIndex):
+        vix_df.columns = vix_df.columns.get_level_values(0)
     
-    # 3. Aktien herunterladen
-    for symbol in universe:
-        try:
-            download_data(symbol)
-        except Exception as e:
-            print(f"❌ Error downloading {symbol}: {e}")
+    vix_clean = vix_df[['Close']].copy()
+    vix_clean.columns = ['vix_close']
+    vix_clean.index.name = 'Date'
 
-    print("-" * 30)
-    print(f"Loading Macro Indicators: {MACRO_SYMBOLS}")
+    # --- TIMEZONE FIX (DIE KORREKTUR) ---
+    print("   3. Fixing Timezones...")
     
-    # 4. NEU: Makro-Daten herunterladen
-    for symbol in MACRO_SYMBOLS:
-        try:
-            download_data(symbol)
-        except Exception as e:
-            print(f"❌ Error downloading MACRO {symbol}: {e}")
+    # A) Haupt-Daten (Date ist eine Spalte -> .dt accessor nötig)
+    df['Date'] = pd.to_datetime(df['Date'])
+    if df['Date'].dt.tz is not None:
+        df['Date'] = df['Date'].dt.tz_localize(None)
 
-    print("[done] All data saved to data/raw/")
+    # B) VIX Daten (Date ist ein Index -> KEIN .dt accessor!)
+    vix_clean.index = pd.to_datetime(vix_clean.index)
+    if vix_clean.index.tz is not None:
+        vix_clean.index = vix_clean.index.tz_localize(None)
+
+    # 4. Zusammenfügen
+    print("   4. Merging VIX into dataset...")
+    df_final = pd.merge(df, vix_clean, on='Date', how='left')
+    
+    # Lücken füllen
+    df_final['vix_close'] = df_final['vix_close'].ffill()
+
+    # 5. Aufräumen & Speichern
+    df_final.columns = [c.lower() for c in df_final.columns]
+    df_final.set_index(['date', 'symbol'], inplace=True)
+    
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    
+    print(f"   💾 Speichere Panel Data nach: {PANEL_PATH}")
+    
+    if 'vix_close' in df_final.columns:
+        print("      ✅ SUCCESS: VIX Feature ist drin!")
+    else:
+        print("      ❌ ERROR: VIX fehlt.")
+
+    df_final.to_parquet(PANEL_PATH)
+    print("--- Download Complete ---")
 
 if __name__ == "__main__":
-    main()
+    download_data()
