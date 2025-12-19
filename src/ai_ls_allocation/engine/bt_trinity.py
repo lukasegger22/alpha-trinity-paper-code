@@ -148,28 +148,51 @@ def run_trinity_engine():
 
     full_df['bb_pos'] = full_df.groupby('symbol')['proxy_price'].transform(lambda x: calculate_bb_position(x)).fillna(0.5)
 
-    # --- MERGING ---
+    # --- MERGING (FIXED V2: NO SYMBOL CONFLICT) ---
     print("   >>> 🔗 Merging Data Sources...")
     
-    # Macro Signals (WICHTIG: Hier passierte der Fehler oft)
+    # 1. MACRO SIGNALS
     if MACRO_SIGNALS_PATH.exists():
-        macro = pd.read_parquet(MACRO_SIGNALS_PATH)
-        # Macro Signals haben oft Date im Index. Resetten!
-        if 'Date' not in macro.columns and isinstance(macro.index, pd.DatetimeIndex):
+        try:
+            macro = pd.read_parquet(MACRO_SIGNALS_PATH)
+            
+            # Reset Index um sicherzugehen
             macro = macro.reset_index()
-            if 'index' in macro.columns: macro.rename(columns={'index': 'Date'}, inplace=True)
-        elif 'date' in macro.columns:
-             macro.rename(columns={'date': 'Date'}, inplace=True)
-
-        # Sicherstellen dass macro['Date'] datetime ist
-        if 'Date' in macro.columns:
-            macro['Date'] = pd.to_datetime(macro['Date'])
-            macro = macro[~macro.Date.duplicated(keep='last')]
-            full_df = pd.merge(full_df, macro, on='Date', how='left')
-            full_df['pred_macro'] = full_df['pred_macro'].ffill().fillna(0)
-        else:
-            print("⚠️ Warning: Macro signals found but no Date column usable.")
+            
+            # Datum finden & standardisieren
+            date_col = None
+            for c in macro.columns:
+                if c.lower() in ['date', 'index', 'time']:
+                    date_col = c
+                    break
+            
+            if date_col:
+                macro.rename(columns={date_col: 'Date'}, inplace=True)
+                macro['Date'] = pd.to_datetime(macro['Date'])
+                
+                # WICHTIG: Wir behalten NUR Date und pred_macro
+                # Das verhindert, dass eine 'symbol'-Spalte im Macro-File
+                # unsere Haupt-Daten zerschießt (KeyError Fix).
+                if 'pred_macro' in macro.columns:
+                    macro = macro[['Date', 'pred_macro']].copy()
+                    
+                    # Duplikate entfernen und mergen
+                    macro = macro.drop_duplicates(subset=['Date'], keep='last')
+                    full_df = pd.merge(full_df, macro, on='Date', how='left')
+                    full_df['pred_macro'] = full_df['pred_macro'].ffill().fillna(0)
+                    print("       ✅ Macro Signals merged successfully. (Safety Net ACTIVE)")
+                else:
+                    print("       ⚠️ Warning: Macro file has no 'pred_macro' column.")
+                    full_df['pred_macro'] = 0
+            else:
+                print("       ⚠️ Warning: No Date column in Macro file.")
+                full_df['pred_macro'] = 0
+                
+        except Exception as e:
+            print(f"       ⚠️ Macro Merge Failed: {e}")
             full_df['pred_macro'] = 0
+    else:
+        full_df['pred_macro'] = 0
 
     if FRED_PATH.exists():
         fred = pd.read_parquet(FRED_PATH).reset_index()
@@ -302,10 +325,24 @@ def run_trinity_engine():
         yield_curve = daily_yield_curve.asof(current_date)
         if pd.isna(yield_curve): yield_curve = 0.5
         
-        if curr_vix < 16.0: base_lev = 1.3
-        elif curr_vix < 24.0: base_lev = 1.0
-        elif curr_vix < 30.0: base_lev = 0.6
-        else: base_lev = 0.0
+        # --- MENTOR LOGIC: DEFENSIVE MODE ---
+        # Wir opfern etwas Rendite für deutlich ruhigeren Schlaf.
+        
+        # 1. Kein extremer Hebel mehr auf Krypto/Tech (Max 1.1 statt 1.3)
+        if curr_vix < 15.0: 
+            base_lev = 1.60 
+            
+        # 2. Schon bei leichter Unruhe (VIX > 15) gehen wir auf "Sicherheit" (0.8)
+        elif curr_vix < 26.0: 
+            base_lev = 1.00 
+            
+        # 3. Bei echter Nervosität (VIX > 20) gehen wir massiv in Cash
+        elif curr_vix < 30.0: 
+            base_lev = 0.60 
+            
+        # 4. Panik-Modus bleibt gleich: Alles verkaufen.
+        else: 
+            base_lev = 0.0
         
         if yield_curve < -0.1 and base_lev > 1.0: base_lev = 1.0
             
