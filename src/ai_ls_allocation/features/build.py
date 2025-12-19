@@ -1,110 +1,92 @@
 import pandas as pd
-import pandas_ta as ta
 import numpy as np
 from pathlib import Path
 
 # --- KONFIGURATION ---
 DATA_DIR = Path("data")
-INPUT_PATH = DATA_DIR / "panel.parquet"       # Hier liegt deine neue, große Datei
-OUTPUT_DIR = DATA_DIR / "features"            # Hier muss das Ergebnis hin
-OUTPUT_PATH = OUTPUT_DIR / "panel.parquet"    # Das finale Futter für die KI
+INPUT_PATH = DATA_DIR / "panel.parquet"
+OUTPUT_DIR = DATA_DIR / "features"
+OUTPUT_PATH = OUTPUT_DIR / "panel.parquet"
+
+def calculate_rsi(series, period=14):
+    """Berechnet den RSI manuell mit Pandas (ohne externe Lib)."""
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).fillna(0)
+    loss = (-delta.where(delta < 0, 0)).fillna(0)
+
+    # Wilder's Smoothing (Standard RSI)
+    avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
 def build_features():
-    print("--- 3. Building Features (Smart Engine) ---")
+    print("--- 3. Building Features (Zero-Dependency Engine) ---")
     
-    # 1. Daten laden (die wir gerade mit download.py erstellt haben)
     if not INPUT_PATH.exists():
         print(f"❌ Critical Error: Input file {INPUT_PATH} not found!")
-        print("   Did you run download.py?")
         return
 
-    # Wir laden die Datei. Da wir im Downloader 'date' und 'symbol' als Index gesetzt haben,
-    # resetten wir hier kurz, damit wir sauber damit arbeiten können.
+    # Daten laden
     df = pd.read_parquet(INPUT_PATH).reset_index()
     
-    print(f"   Daten geladen. Shape: {df.shape}")
-    print(f"   Spalten: {list(df.columns)}")
-    
-    # Spaltennamen normalisieren (alles kleinschreiben zur Sicherheit)
+    # Spalten klein schreiben
     df.columns = [c.lower() for c in df.columns]
     
-    # Sicherstellen, dass 'close' existiert
     if 'close' not in df.columns:
-        print("❌ Error: Keine 'close' Spalte gefunden!")
+        print("❌ Error: Keine 'close' Spalte!")
         return
 
-    # Check ob VIX da ist (sollte im Downloader passiert sein)
-    if 'vix_close' in df.columns:
-        print("   ✅ VIX Feature gefunden. Wird genutzt.")
-    else:
-        print("   ⚠️ WARNUNG: VIX fehlt! Wurde download.py ausgeführt?")
-
-    # 2. Features berechnen
-    # Wir müssen pro Symbol gruppieren, damit der RSI nicht von Apple auf Bitcoin "überschwappt".
-    
-    print("   Berechne Indikatoren (RSI, SMA, Returns)...")
+    print("   Berechne Indikatoren (Native Pandas)...")
     processed_dfs = []
     
-    # Wir setzen den Index für die Berechnung wieder auf Datum
+    # Index auf Date setzen für Berechnungen
     df.set_index('date', inplace=True)
     
     for symbol, group in df.groupby('symbol'):
-        # Sortieren ist wichtig für Rolling Windows
         group = group.sort_index()
-        
-        # Kopie erstellen
         g = group.copy()
         
-        # --- DEINE ALTEN FEATURES (Portiert) ---
-        
-        # 1. Returns (Wachstum)
+        # 1. Returns
         g['returns_1d'] = g['close'].pct_change(1)
         g['returns_5d'] = g['close'].pct_change(5)
         g['returns_20d'] = g['close'].pct_change(20)
         
-        # 2. Volatilität (60 Tage)
+        # 2. Volatilität
         g['volatility_60d'] = g['returns_1d'].rolling(60).std() * np.sqrt(252)
         
-        # --- NEUE FEATURES (für die KI) ---
+        # 3. SMA (Simple Moving Average) - Einfach mit .rolling().mean()
+        g['sma_200'] = g['close'].rolling(window=200).mean()
         
-        # 3. RSI (Relative Strength Index) - Klassiker
-        g['rsi'] = ta.rsi(g['close'], length=14)
+        # 4. RSI (Manuell berechnet)
+        g['rsi'] = calculate_rsi(g['close'], period=14)
         
-        # 4. SMA (Gleitende Durchschnitte) - Trend
-        g['sma_200'] = ta.sma(g['close'], length=200)
-        
-        # 5. Abstand zum SMA (Wie weit sind wir weg?)
-        # Wenn Preis > SMA200 -> Aufwärtstrend -> Wert positiv
+        # 5. Abstand zum SMA
         g['dist_sma200'] = (g['close'] - g['sma_200']) / g['sma_200']
-        
-        # VIX ist schon als Spalte 'vix_close' da, müssen wir nicht neu berechnen
         
         processed_dfs.append(g)
 
-    # 3. Alles wieder zusammenkleben
     if not processed_dfs:
         print("❌ Keine Daten verarbeitet.")
         return
 
     df_features = pd.concat(processed_dfs)
     
-    # 4. Bereinigen (NaNs entfernen)
-    # Durch den SMA_200 fehlen die ersten 200 Tage jeder Aktie. Das ist normal.
-    original_len = len(df_features)
+    # NaNs entfernen
+    orig_len = len(df_features)
     df_features.dropna(inplace=True)
-    print(f"   NaNs entfernt (wegen SMA200): {original_len} -> {len(df_features)} Zeilen übrig.")
-    
-    # Index wieder sauber setzen für Parquet (Date + Symbol)
-    # 'symbol' ist aktuell eine Spalte, 'date' ist der Index
+    print(f"   NaNs entfernt: {orig_len} -> {len(df_features)} Zeilen.")
+
+    # Speichern
     df_features.reset_index(inplace=True)
     df_features.set_index(['date', 'symbol'], inplace=True)
-
-    # 5. Speichern
+    
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     df_features.to_parquet(OUTPUT_PATH)
     
-    print(f"   💾 Features gespeichert nach: {OUTPUT_PATH}")
-    print("--- Feature Engineering Complete ---")
+    print(f"   💾 Features gespeichert: {OUTPUT_PATH}")
 
 if __name__ == "__main__":
     build_features()
