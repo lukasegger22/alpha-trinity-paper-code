@@ -11,9 +11,17 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPRegressor
 from sklearn.ensemble import RandomForestRegressor
 
+# Pfad-Hack, damit Imports funktionieren
 current_dir = Path(__file__).resolve().parent.parent.parent 
 sys.path.append(str(current_dir))
-from ai_ls_allocation.engine.optimizer import MarkowitzOptimizer
+try:
+    from ai_ls_allocation.engine.optimizer import MarkowitzOptimizer
+except ImportError:
+    # Fallback falls Optimizer nicht gefunden wird (einfacher Equal-Weight Dummy für Notfälle)
+    print("⚠️ Warning: MarkowitzOptimizer not found. Using simple fallback logic if needed.")
+    class MarkowitzOptimizer:
+        def __init__(self, **kwargs): pass
+        def optimize(self, signals, returns): return signals / signals.sum()
 
 # --- ENV VARS ---
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
@@ -43,7 +51,6 @@ random.seed(42)
 
 # --- INDICATORS ---
 
-# ZURÜCK ZUM GEWINNER: Efficiency Ratio 🏆
 def calculate_efficiency_ratio(series, window=20):
     direction = series.diff(window).abs()
     volatility = series.diff().abs().rolling(window).sum().replace(0, 0.001)
@@ -85,18 +92,30 @@ def run_trinity_engine():
     print(f"\n--- 🚀 STARTING TRINITY ENGINE (Restored Champion: Efficiency + Hybrid Ensemble) ---", flush=True)
     print(f"   📅 Training Limit: {TRAIN_END_DATE}")
 
-    # 1. Daten laden
+    # 1. Daten laden & Index bereinigen (MENTOR FIX)
     full_df = load_data()
     full_df = full_df.reset_index()
+    
+    # Intelligentes Umbenennen statt blindes Raten
+    if 'date' in full_df.columns:
+        full_df.rename(columns={'date': 'Date'}, inplace=True)
+    if 'index' in full_df.columns and 'Date' not in full_df.columns:
+        full_df.rename(columns={'index': 'Date'}, inplace=True)
+        
     if 'Date' not in full_df.columns:
-        if 'index' in full_df.columns: full_df = full_df.rename(columns={'index': 'Date'})
-        else: full_df = full_df.rename(columns={full_df.columns[0]: 'Date'})
+        raise ValueError(f"❌ CRITICAL: Could not find 'Date' column. Available: {full_df.columns.tolist()}")
+    
+    # Sicherstellen dass Symbol existiert
+    if 'Symbol' in full_df.columns:
+        full_df.rename(columns={'Symbol': 'symbol'}, inplace=True)
+        
     full_df['Date'] = pd.to_datetime(full_df['Date'])
     
     if 'Volume' not in full_df.columns:
         print("⚠️ Warning: No Volume data found! Using dummy volume.")
         full_df['Volume'] = 1.0
 
+    # Duplikate entfernen
     full_df = full_df.drop_duplicates(subset=['Date', 'symbol'], keep='last')
     full_df = full_df.sort_values(by=['symbol', 'Date'])
     
@@ -112,12 +131,14 @@ def run_trinity_engine():
     # BACK TO EFFICIENCY
     full_df['efficiency'] = full_df.groupby('symbol')['proxy_price'].transform(lambda x: calculate_efficiency_ratio(x, window=20)).fillna(0.5)
     
-    full_df['obv'] = full_df.groupby('symbol').apply(calculate_obv).reset_index(level=0, drop=True)
+    # OBV mit Warnungs-Unterdrückung
+    full_df['obv'] = full_df.groupby('symbol', group_keys=False).apply(calculate_obv).reset_index(level=0, drop=True)
     full_df['obv_trend'] = full_df.groupby('symbol')['obv'].pct_change(20).fillna(0)
     
     def rolling_vwap(x_vol, x_price, w=20):
         pv = x_price * x_vol
         return pv.rolling(w).sum() / x_vol.rolling(w).sum()
+    
     full_df['vwap_20'] = full_df.groupby('symbol', group_keys=False).apply(lambda x: rolling_vwap(x['Volume'], x['proxy_price']))
     full_df['dist_vwap'] = (full_df['proxy_price'] / full_df['vwap_20']) - 1.0
     full_df['dist_vwap'] = full_df['dist_vwap'].fillna(0)
@@ -129,11 +150,26 @@ def run_trinity_engine():
 
     # --- MERGING ---
     print("   >>> 🔗 Merging Data Sources...")
+    
+    # Macro Signals (WICHTIG: Hier passierte der Fehler oft)
     if MACRO_SIGNALS_PATH.exists():
         macro = pd.read_parquet(MACRO_SIGNALS_PATH)
-        macro = macro[~macro.index.duplicated(keep='last')]
-        full_df = pd.merge(full_df, macro, on='Date', how='left')
-        full_df['pred_macro'] = full_df['pred_macro'].ffill().fillna(0)
+        # Macro Signals haben oft Date im Index. Resetten!
+        if 'Date' not in macro.columns and isinstance(macro.index, pd.DatetimeIndex):
+            macro = macro.reset_index()
+            if 'index' in macro.columns: macro.rename(columns={'index': 'Date'}, inplace=True)
+        elif 'date' in macro.columns:
+             macro.rename(columns={'date': 'Date'}, inplace=True)
+
+        # Sicherstellen dass macro['Date'] datetime ist
+        if 'Date' in macro.columns:
+            macro['Date'] = pd.to_datetime(macro['Date'])
+            macro = macro[~macro.Date.duplicated(keep='last')]
+            full_df = pd.merge(full_df, macro, on='Date', how='left')
+            full_df['pred_macro'] = full_df['pred_macro'].ffill().fillna(0)
+        else:
+            print("⚠️ Warning: Macro signals found but no Date column usable.")
+            full_df['pred_macro'] = 0
 
     if FRED_PATH.exists():
         fred = pd.read_parquet(FRED_PATH).reset_index()
@@ -162,7 +198,6 @@ def run_trinity_engine():
     # --- TRAINING SPLIT ---
     print(f"   >>> ✂️  Splitting Data at {TRAIN_END_DATE}...")
     
-    # Efficiency ist zurück, Hurst ist weg
     features = [
         'returns_1d', 'returns_5d', 'volatility_60d', 'VIX', 
         'obv_trend', 'dist_vwap', 'mfi', 'bb_pos'
@@ -191,10 +226,10 @@ def run_trinity_engine():
         for i in range(ENSEMBLE_SIZE):
             seed = 42 + i
             if i < split_point:
-                print(f"       -> Training Model {i+1} (NN, Seed {seed})...")
+                # NN
                 model = MLPRegressor(hidden_layer_sizes=(128, 64), max_iter=250, random_state=seed, early_stopping=True)
             else:
-                print(f"       -> Training Model {i+1} (RF, Seed {seed})...")
+                # RF
                 model = RandomForestRegressor(n_estimators=50, max_depth=10, min_samples_leaf=20, random_state=seed, n_jobs=-1)
             
             model.fit(X_train_scaled, y_train)
@@ -221,7 +256,7 @@ def run_trinity_engine():
     
     full_df['raw_signal'] = full_df['raw_signal'] * sentiment_boost * quality_factor
     
-    # FILTER: Efficiency < 0.15 (Der Original-Filter)
+    # FILTER
     full_df['regime_filter'] = np.where(full_df['efficiency'] < 0.15, 0.0, 1.0)
     full_df['raw_signal'] = full_df['raw_signal'] * full_df['regime_filter']
     
@@ -301,4 +336,7 @@ if __name__ == "__main__":
         run_trinity_engine()
     except Exception as e:
         print(f"\n❌ FATAL ERROR: {e}")
+        # Traceback für besseres Debugging
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
