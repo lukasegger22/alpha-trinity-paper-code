@@ -11,3 +11,4 @@ pyyaml
 cvxpy
 matplotlib
 alpaca-py
+pandas_ta
