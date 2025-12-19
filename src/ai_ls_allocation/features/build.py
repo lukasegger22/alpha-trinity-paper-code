@@ -1,116 +1,82 @@
 import pandas as pd
+import pandas_ta as ta
 import numpy as np
 from pathlib import Path
 
-import sys
-
-current_dir = Path(__file__).resolve().parent.parent.parent 
-sys.path.append(str(current_dir))
-
 # --- KONFIGURATION ---
-RAW_DIR = Path("data/raw")
-FEATURE_DIR = Path("data/features")
-FEATURE_DIR.mkdir(parents=True, exist_ok=True)
-
-def find_file(keyword):
-    """
-    Sucht eine Datei, die das Keyword (z.B. 'VIX') im Namen hat.
-    Das löst das Problem mit ^VIX vs VIX ein für alle Mal.
-    """
-    files = list(RAW_DIR.glob(f"*{keyword}*.parquet"))
-    if not files:
-        raise FileNotFoundError(f"❌ Critical: No file found containing '{keyword}' in {RAW_DIR}")
-    
-    # Nimm die erste, die passt (z.B. ^VIX.parquet)
-    path = files[0]
-    print(f"   -> Found {keyword} data: {path.name}")
-    
-    df = pd.read_parquet(path)
-    col = 'Close' if 'Close' in df.columns else 'Adj Close'
-    return df[col]
+DATA_DIR = Path("data")
+INPUT_PATH = DATA_DIR / "panel.parquet"       # Das kommt vom Downloader
+OUTPUT_DIR = DATA_DIR / "features"            # Da soll es hin
+OUTPUT_PATH = OUTPUT_DIR / "panel.parquet"    # Das braucht das Training
 
 def build_features():
-    print("--- 3. Building Features (Panel) ---")
+    print("--- 3. Building Features (Smart Engine) ---")
     
-    # 1. Macro Daten laden (Intelligente Suche)
-    try:
-        vix = find_file("VIX").rename("VIX")
-        tnx = find_file("TNX").rename("TNX")
-    except FileNotFoundError as e:
-        print(e)
+    # 1. Daten laden (die wir gerade mit VIX erstellt haben)
+    if not INPUT_PATH.exists():
+        print(f"❌ Critical Error: Input file {INPUT_PATH} not found!")
+        print("   Did you run download.py?")
         return
 
-    # 2. Equity Universe laden
-    universe_files = list(RAW_DIR.glob("*.parquet"))
-    # Filtere Macro-Files raus
-    macro_keywords = ["VIX", "TNX", "GSPC"]
-    equity_files = [f for f in universe_files if not any(k in f.name for k in macro_keywords)]
+    df = pd.read_parquet(INPUT_PATH)
+    print(f"   Daten geladen. Shape: {df.shape}")
     
-    print(f"Processing {len(equity_files)} symbols...")
+    # Check ob VIX da ist
+    if 'vix_close' in df.columns:
+        print("   ✅ VIX Feature gefunden. Wird durchgeschleift.")
+    else:
+        print("   ⚠️ WARNUNG: VIX fehlt! Training wird schlechter sein.")
+
+    # 2. Technische Indikatoren berechnen (RSI, SMA, Volatilität)
+    # Wir gruppieren nach Symbol, damit Indikatoren pro Aktie berechnet werden
+    # und nicht "über" die Aktien hinweg vermischt werden.
     
-    all_dfs = []
+    # Liste für Ergebnisse
+    processed_dfs = []
     
-    for file_path in equity_files:
-        symbol = file_path.stem.replace("^", "") # Bereinigen
+    for symbol, group in df.groupby(level='symbol'):
+        group = group.sort_index() # Sicherstellen, dass Zeit stimmt
         
-        try:
-            df = pd.read_parquet(file_path)
-            
-            # Preis-Spalte finden
-            if 'Close' in df.columns:
-                price_col = 'Close'
-            elif 'Adj Close' in df.columns:
-                price_col = 'Adj Close'
-            elif 'close' in df.columns:
-                price_col = 'close'
-            else:
-                continue # Überspringen wenn kein Preis
-            
-            # WICHTIG: 'Close' explizit setzen für Execution System
-            df['Close'] = df[price_col]
-            df = df[['Close']].copy()
-            df['symbol'] = symbol
-            
-            # --- FEATURE ENGINEERING ---
-            df['returns_1d'] = df['Close'].pct_change(1)
-            df['returns_5d'] = df['Close'].pct_change(5)
-            df['returns_20d'] = df['Close'].pct_change(20)
-            df['volatility_60d'] = df['returns_1d'].rolling(60).std() * np.sqrt(252)
-            
-            # Macro Join
-            df = df.join(vix).join(tnx)
-            df['VIX'] = df['VIX'].ffill()
-            df['TNX_Level'] = df['TNX'].ffill()
-            
-            df['TNX_Chg_10d'] = df['TNX_Level'].diff(10)
-            df['Interaction_TNX_Vola'] = df['TNX_Level'] * df['volatility_60d']
-            df['SP500_Trend'] = np.where(df['Close'] > df['Close'].rolling(200).mean(), 1, 0)
+        # Kopie um Warnungen zu vermeiden
+        g = group.copy()
+        
+        # --- FEATURE ENGINEERING ---
+        
+        # RSI (Relative Strength Index)
+        g['rsi'] = ta.rsi(g['close'], length=14)
+        
+        # SMA (Simple Moving Average) - Trend
+        g['sma_50'] = ta.sma(g['close'], length=50)
+        g['sma_200'] = ta.sma(g['close'], length=200)
+        
+        # Abstand zum SMA (Trend-Stärke)
+        g['dist_sma200'] = (g['close'] - g['sma_200']) / g['sma_200']
+        
+        # Volatilität (Rolling Std Dev)
+        g['volatility_20'] = g['close'].pct_change().rolling(20).std()
+        
+        # Returns (für Zielvariable beim Training wichtig)
+        g['return_1d'] = g['close'].pct_change()
+        g['return_5d'] = g['close'].pct_change(5)
+        
+        # VIX lassen wir so wie er ist (er ist ja schon gemerged)
+        
+        processed_dfs.append(g)
 
-            df = df.dropna()
-            
-            cols_to_keep = [
-                'symbol', 'Close', 
-                'returns_1d', 'returns_5d', 'returns_20d', 
-                'volatility_60d', 
-                'VIX', 'TNX_Level', 'TNX_Chg_10d', 'Interaction_TNX_Vola', 'SP500_Trend'
-            ]
-            
-            existing_cols = [c for c in cols_to_keep if c in df.columns]
-            all_dfs.append(df[existing_cols])
-            
-        except Exception as e:
-            print(f"⚠️ Error processing {symbol}: {e}")
-            continue
+    # 3. Wieder zusammenfügen
+    df_features = pd.concat(processed_dfs)
+    
+    # NaN Werte entfernen (die ersten 200 Tage fehlen wegen SMA200)
+    original_len = len(df_features)
+    df_features.dropna(inplace=True)
+    print(f"   NaNs entfernt: {original_len} -> {len(df_features)} Zeilen übrig.")
 
-    if not all_dfs:
-        print("❌ No data processed!")
-        return
-
-    full_panel = pd.concat(all_dfs)
-    output_path = FEATURE_DIR / "panel.parquet"
-    full_panel.to_parquet(output_path)
-    print(f"✅ Panel built with shape {full_panel.shape}")
-    print(f"Saved to {output_path}")
+    # 4. Speichern
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    df_features.to_parquet(OUTPUT_PATH)
+    
+    print(f"   💾 Features gespeichert nach: {OUTPUT_PATH}")
+    print("--- Feature Engineering Complete ---")
 
 if __name__ == "__main__":
     build_features()
