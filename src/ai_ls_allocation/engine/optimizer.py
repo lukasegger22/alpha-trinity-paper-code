@@ -47,8 +47,8 @@ class MarkowitzOptimizer:
         
         constraints = [
             cvx.sum(w) == 1,  # Investiere 100%
-            w >= 0.0,         # Long Only (Kein Short)
-            w <= 0.25         # DIVERSIFIKATION: Max 25% in eine Aktie (kein Klumpenrisiko)
+            w >= -0.25,         # Long Only (Kein Short)
+            w <= 0.25       # DIVERSIFIKATION: Max 25% in eine Aktie (kein Klumpenrisiko)
         ]
 
         # 4. Lösen mit OSQP (Robuster als ECOS)

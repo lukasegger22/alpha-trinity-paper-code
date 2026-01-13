@@ -12,7 +12,7 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.ensemble import RandomForestRegressor
 
 # Pfad-Hack, damit Imports funktionieren
-current_dir = Path(__file__).resolve().parent.parent.parent 
+current_dir = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(current_dir))
 try:
     from ai_ls_allocation.engine.optimizer import MarkowitzOptimizer
@@ -306,45 +306,65 @@ def run_trinity_engine():
     weights_history = []
     current_weights = pd.Series(0.0, index=pivot_signals.columns)
     
+    SHORT_CONFIDENCE_THRESHOLD = -0.05
+
     for current_date in test_dates:
         idx = pivot_signals.index.get_loc(current_date)
-        current_sig = pivot_signals.iloc[idx]
+        
+        # 1. Das rohe Signal holen (Kopie erstellen!)
+        current_sig = pivot_signals.iloc[idx].copy()
         past_ret = pivot_returns.iloc[:idx]
         
-        target_weights = optimizer.optimize(current_sig, past_ret)
-        target_weights[target_weights < MIN_POSITION_SIZE] = 0.0 
-        target_weights = target_weights.clip(upper=0.25)
-        if target_weights.sum() > 0: target_weights = target_weights / target_weights.sum()
-            
-        current_weights = (current_weights * (1 - REBALANCE_SPEED)) + (target_weights * REBALANCE_SPEED)
-        current_weights[current_weights < MIN_POSITION_SIZE] = 0.0
-        if current_weights.sum() > 0: current_weights = current_weights / current_weights.sum()
+        # --- 🛡️ MENTOR LOGIC: THE SNIPER FILTER ---
+        # Wir manipulieren das Signal, BEVOR es in den Optimizer geht.
         
+        # A) Finde alle "schlechten" Signale, die aber nicht "schlecht genug" sind.
+        #    Das ist die "Dead Zone" (z.B. zwischen -0.08 und 0.0).
+        #    Hier würden wir normalerweise shorten, aber wir gehen lieber in Cash.
+        weak_short_mask = (current_sig < 0.0) & (current_sig > SHORT_CONFIDENCE_THRESHOLD)
+        
+        # B) Setze diese wackeligen Kandidaten auf 0.0
+        #    Der Optimizer denkt jetzt: "Aha, keine Meinung dazu -> ich kaufe/shorte es nicht."
+        current_sig[weak_short_mask] = 0.0
+        
+        # C) Jetzt erst Optimieren (Mit erlaubten Shorts im Optimizer!)
+        try:
+            target_weights = optimizer.optimize(current_sig, past_ret)
+        except:
+            target_weights = pd.Series(0, index=current_sig.index)
+
+        # ------------------------------------------
+
+        # Ab hier fast wie vorher, aber wir müssen aufpassen beim Normalisieren
+        # Wenn wir Short sind, können Gewichte negativ sein!
+        
+        # Filter: Kleinstbeträge löschen
+        target_weights[target_weights.abs() < MIN_POSITION_SIZE] = 0.0 
+        
+        # Capping (jetzt in beide Richtungen!)
+        target_weights = target_weights.clip(lower=-0.25, upper=0.25)
+        
+        # Normalisierung (Komplexer bei Long/Short! Wir nutzen Gross Exposure)
+        gross_exposure = target_weights.abs().sum()
+        if gross_exposure > 0: 
+            target_weights = target_weights / gross_exposure
+            
+        # Glättung (Rebalance Speed)
+        current_weights = (current_weights * (1 - REBALANCE_SPEED)) + (target_weights * REBALANCE_SPEED)
+        
+        # Macro Brain Logik (Bleibt gleich, steuert den Gesamt-Hebel)
         curr_vix = daily_vix.asof(current_date)
         if pd.isna(curr_vix): curr_vix = 20.0
-        yield_curve = daily_yield_curve.asof(current_date)
-        if pd.isna(yield_curve): yield_curve = 0.5
         
-        # --- MENTOR LOGIC: DEFENSIVE MODE ---
-        # Wir opfern etwas Rendite für deutlich ruhigeren Schlaf.
-        
-        # 1. Kein extremer Hebel mehr auf Krypto/Tech (Max 1.1 statt 1.3)
+        # Hier steuern wir, wie viel GAS wir geben
         if curr_vix < 15.0: 
             base_lev = 1.60 
-            
-        # 2. Schon bei leichter Unruhe (VIX > 15) gehen wir auf "Sicherheit" (0.8)
         elif curr_vix < 26.0: 
             base_lev = 1.00 
-            
-        # 3. Bei echter Nervosität (VIX > 20) gehen wir massiv in Cash
         elif curr_vix < 30.0: 
             base_lev = 0.60 
-            
-        # 4. Panik-Modus bleibt gleich: Alles verkaufen.
         else: 
             base_lev = 0.0
-        
-        if yield_curve < -0.1 and base_lev > 1.0: base_lev = 1.0
             
         final_weights = current_weights * base_lev
         final_weights.name = current_date

@@ -1,33 +1,26 @@
 universe:
-  # --- 1. The Market Anchors (Indizes) ---
+  # --- 1. The Anchors (Markt-Barometer) ---
   - SPY       # S&P 500 (Basis)
-  - QQQ       # Nasdaq (Tech-Basis)
-  - IWM       # Small Caps (Wenn die Wirtschaft boomt)
-  - EEM       # Emerging Markets (Wachstum außerhalb USA)
-  - VGK       # Europa (Diversifikation)
+  - QQQ       # Nasdaq (Der Wachstumsmotor)
 
-  # --- 2. The Magnificent Tech (Growth Engines) ---
-  - NVDA      # AI Hardware King
-  - MSFT      # Software/Cloud King
-  - GOOGL     # Data/AI King
-  - META      # Social/Ads King
-  - AMZN      # E-Commerce/Cloud
-  - TSLA      # EV/Robotik (Wildcard)
-  - PLTR      # AI Software (High Volatility Play)
-
-  # --- 3. The Defenders (Safety & Stability) ---
-  - JPM       # Finanzen (Profitiert von hohen Zinsen)
-  - JNJ       # Healthcare (Fels in der Brandung)
-  - XOM       # Energie (Schutz gegen Inflation)
-  - BRK-B     # Berkshire Hathaway (Qualität/Value)
-  - LMT       # Lockheed Martin (Verteidigung/Geopolitik)
-
-  # --- 4. Macro & Hedges (Versicherung) ---
-  - GLD       # Gold (Angst-Währung)
-  - SLV       # Silber
-  - USO       # Öl (Energie-Preise)
-  - TLT       # Staatsanleihen (Zins-Wette)
-
-  # --- 5. Crypto (Asymmetric Upside) ---
-  - BTC-USD   # Digitales Gold
-  - ETH-USD   # Tech-Crypto
+  # --- 2. Hyper-Growth (Tech & AI) ---
+  - NVDA      # AI Leader (Hohe Vola)
+  - TSLA      # Das volatilste Large-Cap Asset (Bot-Liebling)
+  - META      # Strong Trend
+  - PLTR      # AI Software (Wilder Ritt)
+  - AMD       # Chip Alternative
+  
+  # --- 3. Crypto Proxy (Das Nitro) ---
+  - BTC-USD   # Digital Gold
+  - ETH-USD   # Tech Crypto
+  - COIN      # Krypto-Exchange (Extremes Beta)
+  - MSTR      # Bitcoin Leverage Aktie
+  
+  # --- 4. The "Anti-Tech" & Commodities (Wenn Tech fällt) ---
+  - XLE       # Energy Sector (Exxon/Chevron) -> Steigt oft bei Inflation/Krieg
+  - URA       # Uranium -> Energie für AI, bewegt sich zyklisch eigenständig
+  - GLD       # Gold -> Angst-Währung
+  
+  # --- 5. The Panic Buttons (Versicherung) ---
+  - TLT       # Staatsanleihen (Steigt bei Rezessionsangst)
+  - UUP       # US-Dollar (Steigt bei totaler Markt-Panik/Liquiditätskrise)
