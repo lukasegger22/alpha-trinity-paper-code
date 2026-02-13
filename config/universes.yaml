@@ -1,26 +1,40 @@
 universe:
-  # --- 1. The Anchors (Markt-Barometer) ---
-  - SPY       # S&P 500 (Basis)
-  - QQQ       # Nasdaq (Der Wachstumsmotor)
-
-  # --- 2. Hyper-Growth (Tech & AI) ---
-  - NVDA      # AI Leader (Hohe Vola)
-  - TSLA      # Das volatilste Large-Cap Asset (Bot-Liebling)
-  - META      # Strong Trend
-  - PLTR      # AI Software (Wilder Ritt)
-  - AMD       # Chip Alternative
+  # === CORE INDICES (25%) ===
+  - SPY       # S&P 500
+  - QQQ       # Nasdaq 100
+  - IWM       # Russell 2000 (Small Caps)
   
-  # --- 3. Crypto Proxy (Das Nitro) ---
-  - BTC-USD   # Digital Gold
-  - ETH-USD   # Tech Crypto
-  - COIN      # Krypto-Exchange (Extremes Beta)
-  - MSTR      # Bitcoin Leverage Aktie
+  # === SECTOR ROTATION (25%) ===
+#  - XLK       # Technology (Überschneidung mit QQQ)
+  - XLF       # Financials
+  - XLI       # Industrials
+  - XLV       # Healthcare
+  - XLP       # Consumer Staples
+  - XLU       # Utilities
   
-  # --- 4. The "Anti-Tech" & Commodities (Wenn Tech fällt) ---
-  - XLE       # Energy Sector (Exxon/Chevron) -> Steigt oft bei Inflation/Krieg
-  - URA       # Uranium -> Energie für AI, bewegt sich zyklisch eigenständig
-  - GLD       # Gold -> Angst-Währung
+  # === INTERNATIONAL (10%) ===
+  - EFA       # Developed Markets (Europa/Australien/Asien)
+  - VWO       # Emerging Markets
+#  - FXI       # China Large-Cap (zu volatil, geopolitisches Risiko)
   
-  # --- 5. The Panic Buttons (Versicherung) ---
-  - TLT       # Staatsanleihen (Steigt bei Rezessionsangst)
-  - UUP       # US-Dollar (Steigt bei totaler Markt-Panik/Liquiditätskrise)
+  # === INDIVIDUAL GROWTH (10%) ===
+  - NVDA      # AI Leader
+  - MSFT      # Steady Tech
+  - META      # Social Media
+  - ASML      # Semiconductor Equipment
+  
+  # === COMMODITIES & REAL ASSETS (15%) ===
+  - GLD       # Gold
+  - XLE       # Energy
+  - DBA       # Agriculture (Nahrung)
+  - VNQ       # Real Estate (REITs)
+  
+  # === BONDS & SAFE HAVENS (10%) ===
+#  - SHY       # Short-Term Treasuries (redundant mit AGG)
+#  - VCSH      # Short-Term Corporate Bonds (redundant mit AGG)
+#  - GOVT      # US Treasury Bond ETF (redundant mit AGG)
+  - UUP       # US Dollar Index
+  - AGG       # US Aggregate Bonds
+  
+  # === VOLATILITY & HEDGES (5%) ===
+  - TLT       # Long Bonds (Duration Hedge)
