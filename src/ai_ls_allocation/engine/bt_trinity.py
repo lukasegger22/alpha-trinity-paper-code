@@ -10,6 +10,8 @@ from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPRegressor
 from sklearn.ensemble import RandomForestRegressor
+import datetime
+from datetime import timedelta
 
 # Pfad-Hack
 current_dir = Path(__file__).resolve().parent.parent.parent
@@ -38,8 +40,11 @@ SIGNALS_PATH = FEATURE_DIR / "trinity_signals.parquet"
 LIVE_SIGNALS_PATH = FEATURE_DIR / "trinity_signals.csv"
 
 # --- REALITY SETTINGS ---
-TRAIN_END_DATE = "2021-12-31"
-TEST_START_DATE = "2022-01-01"
+#TRAIN_END_DATE = "2021-12-31"
+today = datetime.date.today()
+TRAIN_END_DATE = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+#TEST_START_DATE = "2022-01-01"
+TEST_START_DATE = today.strftime("%Y-%m-%d")
 COST_OF_CARRY_RATE = 0.05     
 MIN_POSITION_SIZE = 0.03 
 ENSEMBLE_SIZE = 10 
@@ -272,20 +277,36 @@ def run_trinity_engine():
     full_df['Quality_Score'] = 0.7 
 
     # 3. TRAINING
-    print(f"   >>> ✂️  Training Hybrid Ensemble...", flush=True)
+    # 3. TRAINING
+    print(f"   >>> ✂️  Training Hybrid Ensemble (Live Mode up to {TRAIN_END_DATE})...", flush=True)
     features = ['returns_1d', 'returns_5d', 'volatility_60d', 'VIX', 'obv_trend', 'dist_vwap', 'mfi', 'bb_pos']
     full_df = full_df.replace([np.inf, -np.inf], np.nan).fillna(0)
     
-    train_df = full_df[full_df['Date'] < TRAIN_END_DATE]
-    if len(train_df) > 0:
+    # Live-Training Split
+    train_df = full_df[full_df['Date'] <= TRAIN_END_DATE].copy()
+    
+    # Target erstellen
+    # Wir wollen 20 Tage in die Zukunft vorhersagen
+    train_df['target'] = train_df['returns_20d'].shift(-20)
+    
+    # WICHTIG: Wir müssen die letzten 20 Tage droppen, weil wir da das Ergebnis noch nicht kennen!
+    # Sonst lernt der Bot Quatsch (fillna 0).
+    train_df = train_df.dropna(subset=['target'])
+    
+    if len(train_df) > 100: # Safety Check
         X_train = train_df[features].values
-        y_train = train_df['returns_20d'].shift(-20).fillna(0).values 
+        y_train = train_df['target'].values 
+        
+        # Scaling
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train)
+        
+        # Alles skalieren für Prediction
         X_all = full_df[features].values
         X_all_scaled = scaler.transform(X_all)
         
         ensemble_preds = np.zeros((len(full_df), ENSEMBLE_SIZE))
+        # ... (Rest vom Training Code bleibt gleich) ...
         for i in range(ENSEMBLE_SIZE):
             if i < ENSEMBLE_SIZE // 2:
                 model = MLPRegressor(hidden_layer_sizes=(64, 32), max_iter=200, random_state=42+i)
@@ -381,10 +402,10 @@ def run_trinity_engine():
             curr_vix = daily_vix.asof(current_date)
             if pd.isna(curr_vix): curr_vix = 20.0
             
-            if curr_vix < 15: base_lev = 1.30 # Reduziert von 1.60!
-            elif curr_vix < 20: base_lev = 1.10
-            elif curr_vix < 25: base_lev = 1.00
-            else: base_lev = 0.70
+            if curr_vix < 15: base_lev = 1.00 # Reduziert von 1.60!
+            elif curr_vix < 20: base_lev = 0.90
+            elif curr_vix < 25: base_lev = 0.70
+            else: base_lev = 0.50
 
         # C. COST KILLER LOGIC (VOR DER EXECUTION)
         
