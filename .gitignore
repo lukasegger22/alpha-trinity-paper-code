@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Data
+data/
+reports/
+
+# Keys & Secrets
+.env
+secret.py
+*.docx
+
+# OS
+.DS_Store

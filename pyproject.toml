@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai_ls_allocation"
+version = "0.1.0"
+description = "Long/Short allocation on ETFs using probabilistic ML. MVP scaffold."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "pandas>=2.2",
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "pyyaml>=6.0",
+  "matplotlib>=3.8",
+  "statsmodels>=0.14",
+  "pandas-market-calendars>=4.3",
+  "yfinance>=0.2.40",
+  "pytest>=8.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["src"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["ai_ls_allocation*"]

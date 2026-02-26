@@ -1,0 +1,13 @@
+pandas
+numpy
+scikit-learn
+xgboost
+yfinance
+pyarrow
+fastparquet
+scipy
+joblib
+pyyaml
+cvxpy
+matplotlib
+alpaca-py
