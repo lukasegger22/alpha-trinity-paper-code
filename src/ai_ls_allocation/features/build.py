@@ -66,24 +66,28 @@ def build_features():
         # Das Modell erwartet diese spezifischen Spalten. 
         # Wir müssen prüfen, ob die Rohdaten (VIX, TNX) da sind.
         
-        # 1. TNX (Treasury Yield) Features
+        # 1. TNX (Treasury Yield) Features & Yield Curve Spreads
         if 'TNX' in g.columns:
-            # Manchmal heißt es TNX, wir mappen es auf TNX_Level für das Modell
             g['TNX_Level'] = g['TNX']
-        
-        if 'TNX_Level' in g.columns:
             g['TNX_Chg_10d'] = g['TNX_Level'].diff(10)
+            # Yield Curve Spreads (10Y - 2Y Approximation via 10d momentum)
+            g['yield_curve_slope'] = g['TNX_Level'].diff(10) / (g['TNX_Level'].abs() + 1e-6)
         else:
-            # Fallback falls TNX fehlt (damit Pipeline nicht crasht, aber Warnung wert)
+            # Fallback falls TNX fehlt
             g['TNX_Level'] = 0
             g['TNX_Chg_10d'] = 0
+            g['yield_curve_slope'] = 0
 
         # 2. VIX Features
         if 'VIX' not in g.columns:
             g['VIX'] = 15.0 # Neutraler Fallback
         
+        # VIX Acceleration (5d Rate of Change) - Paper Requirement
+        g['VIX_Acceleration'] = g['VIX'].pct_change(5)
+        
         # 3. Interaction Features (Das fehlte!)
         g['Interaction_TNX_Vola'] = g['TNX_Level'] * g['VIX']
+        g['Interaction_Spread_VIX'] = g['yield_curve_slope'] * g['VIX']
 
         # 4. SP500 Trend (Proxy)
         # Wenn wir keinen S&P500 Index haben, nutzen wir den SMA200 des Assets als Proxy für den Trend

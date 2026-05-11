@@ -6,6 +6,7 @@ import sys
 import pandas as pd
 import numpy as np
 import random
+import joblib
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPRegressor
@@ -30,6 +31,7 @@ os.environ['OMP_NUM_THREADS'] = '1'
 
 # --- KONFIGURATION ---
 FEATURE_DIR = Path("data/features")
+MODEL_DIR = Path("models")
 MACRO_SIGNALS_PATH = FEATURE_DIR / "macro_signals.parquet"
 SENTIMENT_PATH = FEATURE_DIR / "sentiment_signals.parquet"
 FRED_PATH = FEATURE_DIR / "fred_macro_economic.parquet"
@@ -38,6 +40,13 @@ PANEL_PATH = FEATURE_DIR / "panel.parquet"
 HISTORY_PATH = FEATURE_DIR / "trinity_history.parquet"
 SIGNALS_PATH = FEATURE_DIR / "trinity_signals.parquet"
 LIVE_SIGNALS_PATH = FEATURE_DIR / "trinity_signals.csv"
+
+# Modelle (für Ridge-Integration)
+MODEL_XGBOOST_1D = MODEL_DIR / "xgboost_1d.joblib"
+MODEL_XGBOOST_5D = MODEL_DIR / "xgboost_5d.joblib"
+MODEL_XGBOOST_20D = MODEL_DIR / "xgboost_20d.joblib"
+MODEL_RIDGE = MODEL_DIR / "ridge_meta_learner.joblib"
+SCALER_PATH = MODEL_DIR / "feature_scaler.joblib"
 
 # --- REALITY SETTINGS ---
 #TRAIN_END_DATE = "2021-12-31"
@@ -48,8 +57,13 @@ TEST_START_DATE = today.strftime("%Y-%m-%d")
 COST_OF_CARRY_RATE = 0.05     
 MIN_POSITION_SIZE = 0.03 
 ENSEMBLE_SIZE = 10 
-MIN_HOLD_DAYS = 5 # <--- NEU: Anti-Churn Regel
+MIN_HOLD_DAYS = 5 # Anti-Churn Regel
 REBALANCE_SPEED = 0.10
+
+# --- PAPER PARAMETERS (Asymmetrische Logik) ---
+SHORT_SIGNAL_THRESHOLD = -0.05  # Höhere Hürde für Short-Signale
+LONG_SIGNAL_THRESHOLD = 0.02    # Niedrigere Hürde für Long-Signale
+MULTI_HORIZON_WEIGHTS = {'1d': 0.5, '5d': 0.3, '20d': 0.2}  # Paper Formula
 
 # --- GLOBAL SEEDING ---
 np.random.seed(42)
@@ -141,6 +155,23 @@ def enforce_minimum_hold(target_weights, current_weights, current_date, entry_da
         if abs(current_weights.get(symbol, 0)) < 0.01 and abs(target_weights.get(symbol, 0)) > 0.01:
             entry_dates[symbol] = current_date
             
+    return adjusted
+
+def apply_asymmetric_signals(signals):
+    """PAPER REQUIREMENT: Asymmetrische Signal-Schwellen für Shorts"""
+    adjusted = signals.copy()
+    
+    for symbol in adjusted.index:
+        sig = adjusted[symbol]
+        
+        # Shorts: Höhere Hürde (require -0.05 or worse)
+        if sig < SHORT_SIGNAL_THRESHOLD and sig >= SHORT_SIGNAL_THRESHOLD * 0.5:
+            adjusted[symbol] = 0  # Reject weak shorts
+        
+        # Longs: Niedrigere Hürde
+        if sig > 0 and sig < LONG_SIGNAL_THRESHOLD:
+            adjusted[symbol] = 0  # Reject weak longs
+    
     return adjusted
 
 def check_transaction_costs(current_weights, target_weights, expected_returns_proxy):
@@ -239,7 +270,7 @@ def load_data():
     return df
 
 def run_trinity_engine():
-    print(f"\n--- 🚀 STARTING TRINITY ENGINE (V3 Cost Killer) ---", flush=True)
+    print(f"\n--- 🚀 STARTING TRINITY ENGINE (V4 Paper-Exact) ---", flush=True)
 
     # 1. LOAD DATA
     full_df = load_data().reset_index()
@@ -250,7 +281,25 @@ def run_trinity_engine():
     if 'Volume' not in full_df.columns: full_df['Volume'] = 1.0
     full_df = full_df.drop_duplicates(subset=['Date', 'symbol'], keep='last').sort_values(by=['symbol', 'Date'])
     
-    # 2. FEATURE ENGINEERING
+    # 2. LOAD MACRO SIGNALS (XGBoost + Ridge Multi-Horizon)
+    print("   >>> 📥 Loading XGBoost + Ridge Signals...", flush=True)
+    macro_signals_df = None
+    if MACRO_SIGNALS_PATH.exists():
+        macro_signals_df = pd.read_parquet(MACRO_SIGNALS_PATH)
+        # Merge mit full_df
+        full_df = pd.merge(
+            full_df,
+            macro_signals_df.reset_index() if hasattr(macro_signals_df.index, 'names') else macro_signals_df.reset_index(drop=True),
+            left_index=False,
+            right_index=False,
+            how='left'
+        )
+        print(f"   ✅ Macro signals loaded: pred_1d, pred_5d, pred_20d, pred_ridge, voting_signal")
+    else:
+        print("   ⚠️  Macro signals not found. Using fallback neural ensemble.")
+        full_df['voting_signal'] = 0.0
+    
+    # 3. FEATURE ENGINEERING
     print("   >>> 🛠️  Engineering Features...", flush=True)
     full_df['proxy_price'] = full_df.groupby('symbol')['returns_1d'].transform(lambda x: (1 + x).cumprod())
     
@@ -271,58 +320,57 @@ def run_trinity_engine():
     full_df['dist_vwap'] = (full_df['proxy_price'] / full_df['vwap_20']) - 1.0
     full_df['dist_vwap'] = full_df['dist_vwap'].fillna(0)
 
-    # Placeholder Merges
+    # Fallback Placeholder Features
     full_df['pred_macro'] = 0 
     full_df['sentiment_score'] = 0.0 
     full_df['Quality_Score'] = 0.7 
 
-    # 3. TRAINING
-    # 3. TRAINING
-    print(f"   >>> ✂️  Training Hybrid Ensemble (Live Mode up to {TRAIN_END_DATE})...", flush=True)
-    features = ['returns_1d', 'returns_5d', 'volatility_60d', 'VIX', 'obv_trend', 'dist_vwap', 'mfi', 'bb_pos']
-    full_df = full_df.replace([np.inf, -np.inf], np.nan).fillna(0)
+    # 4. USE VOTING_SIGNAL IF AVAILABLE (from XGBoost + Ridge)
+    # Otherwise, fallback to Neural Ensemble
+    print(f"   >>> 📊 Signal Selection...", flush=True)
     
-    # Live-Training Split
-    train_df = full_df[full_df['Date'] <= TRAIN_END_DATE].copy()
-    
-    # Target erstellen
-    # Wir wollen 20 Tage in die Zukunft vorhersagen
-    train_df['target'] = train_df['returns_20d'].shift(-20)
-    
-    # WICHTIG: Wir müssen die letzten 20 Tage droppen, weil wir da das Ergebnis noch nicht kennen!
-    # Sonst lernt der Bot Quatsch (fillna 0).
-    train_df = train_df.dropna(subset=['target'])
-    
-    if len(train_df) > 100: # Safety Check
-        X_train = train_df[features].values
-        y_train = train_df['target'].values 
-        
-        # Scaling
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        
-        # Alles skalieren für Prediction
-        X_all = full_df[features].values
-        X_all_scaled = scaler.transform(X_all)
-        
-        ensemble_preds = np.zeros((len(full_df), ENSEMBLE_SIZE))
-        # ... (Rest vom Training Code bleibt gleich) ...
-        for i in range(ENSEMBLE_SIZE):
-            if i < ENSEMBLE_SIZE // 2:
-                model = MLPRegressor(hidden_layer_sizes=(64, 32), max_iter=200, random_state=42+i)
-            else:
-                model = RandomForestRegressor(n_estimators=30, max_depth=8, random_state=42+i, n_jobs=-1)
-            model.fit(X_train_scaled, y_train)
-            ensemble_preds[:, i] = model.predict(X_all_scaled)
-        full_df['pred_neural'] = np.mean(ensemble_preds, axis=1)
+    if 'voting_signal' in full_df.columns:
+        print("   ✅ Using Multi-Horizon Voting Signal (XGBoost + Ridge)")
+        full_df['raw_signal'] = full_df['voting_signal']
     else:
-        print("❌ Training Failed")
-        return
-
-    full_df['raw_signal'] = full_df['pred_neural']
+        # FALLBACK: Train Neural Ensemble (Legacy)
+        print("   ⚠️  Voting signal not found. Training Neural Ensemble Fallback...")
+        features = ['returns_1d', 'returns_5d', 'volatility_60d', 'VIX', 'obv_trend', 'dist_vwap', 'mfi', 'bb_pos']
+        full_df = full_df.replace([np.inf, -np.inf], np.nan).fillna(0)
+        
+        # Live-Training Split
+        train_df = full_df[full_df['Date'] <= TRAIN_END_DATE].copy()
+        train_df['target'] = train_df['returns_20d'].shift(-20)
+        train_df = train_df.dropna(subset=['target'])
+        
+        if len(train_df) > 100:
+            X_train = train_df[features].values
+            y_train = train_df['target'].values 
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_all = full_df[features].values
+            X_all_scaled = scaler.transform(X_all)
+            
+            ensemble_preds = np.zeros((len(full_df), ENSEMBLE_SIZE))
+            for i in range(ENSEMBLE_SIZE):
+                if i < ENSEMBLE_SIZE // 2:
+                    model = MLPRegressor(hidden_layer_sizes=(64, 32), max_iter=200, random_state=42+i)
+                else:
+                    model = RandomForestRegressor(n_estimators=30, max_depth=8, random_state=42+i, n_jobs=-1)
+                model.fit(X_train_scaled, y_train)
+                ensemble_preds[:, i] = model.predict(X_all_scaled)
+            full_df['raw_signal'] = np.mean(ensemble_preds, axis=1)
+        else:
+            print("❌ Fallback Training Failed - no data")
+            full_df['raw_signal'] = 0.0
+    
+    # Ensure raw_signal exists
+    if 'raw_signal' not in full_df.columns:
+        full_df['raw_signal'] = 0.0
+    
     full_df['ensemble_signal'] = full_df.groupby('symbol')['raw_signal'].transform(lambda x: x.ewm(span=5).mean()) * 50.0
 
-    # 4. BACKTEST LOOP
+    # 5. BACKTEST LOOP
     print(f"   >>> 📐 Backtesting starting {TEST_START_DATE}...", flush=True)
     
     pivot_signals = full_df.pivot(index='Date', columns='symbol', values='ensemble_signal').fillna(0)
@@ -343,7 +391,10 @@ def run_trinity_engine():
         current_sig = pivot_signals.iloc[idx].copy()
         past_ret = pivot_returns.iloc[:idx]
         
-        # A. ENHANCED CRISIS SCORE
+        # A. APPLY ASYMMETRIC SIGNAL THRESHOLDS (Paper Requirement)
+        current_sig = apply_asymmetric_signals(current_sig)
+        
+        # B. ENHANCED CRISIS SCORE
         # Wir nutzen deine neue, schlaue Formel
         crisis_score = calculate_enhanced_crisis_score(current_date, spy_data, daily_vix, full_df)
         
