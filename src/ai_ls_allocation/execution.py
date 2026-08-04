@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -29,7 +30,7 @@ def rebalance_portfolio():
     
     if not all([API_KEY, SECRET_KEY]):
         print("❌ CRITICAL: Keine Alpaca Keys gefunden.")
-        return
+        sys.exit(2)
 
     try:
         trading_client = TradingClient(API_KEY, SECRET_KEY, paper=True)

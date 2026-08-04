@@ -32,6 +32,14 @@ jobs:
         mkdir -p logs
         mkdir -p reports
 
+    - name: Check Alpaca Secrets
+      env:
+        ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+        ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      run: |
+        test -n "$ALPACA_API_KEY"
+        test -n "$ALPACA_SECRET_KEY"
+
     - name: Run Trinity Pipeline
       run: |
         export PYTHONPATH="${PYTHONPATH}:."
