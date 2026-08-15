@@ -1,52 +1,68 @@
-name: 🏦 Trinity V3 Live Trading
+name: Trinity V3 Live Trading
 
 on:
-  # 1. Manuell startbar (Button auf GitHub)
   workflow_dispatch:
-  
-  # 2. Automatisch Mo-Fr um 20:45 UTC (ca. 15 Minuten vor US-Close)
   schedule:
     - cron: '45 20 * * 1-5'
 
 jobs:
   trade:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     
     steps:
-    # Code herunterladen
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    # Python 3.9 aufsetzen
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.9'
+        python-version: '3.10'
+        cache: pip
 
-    # Bibliotheken installieren
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    # Ordner für Daten erstellen (Wichtig für Parquet files)
     - name: Create Data Directories
       run: |
         mkdir -p data/features
         mkdir -p models
+        mkdir -p logs
+        mkdir -p reports
 
-    # --- HIER STARTET DEIN BOT ---
-    # Er führt erst den Data Download aus, dann das Training, dann den Trade
-    - name: Run Trinity Pipeline
+    - name: Check Alpaca Secrets
       env:
-        # Hier holen wir die Schlüssel aus den GitHub Secrets
-        APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
-        APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
-        APCA_API_BASE_URL: "https://paper-api.alpaca.markets"
+        ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+        ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
       run: |
-        # Stelle sicher, dass wir im richtigen Verzeichnis sind
-        export PYTHONPATH=$PYTHONPATH:.
-        
-        # 1. Pipeline starten (Download -> Train -> Trade)
-        # Passe den Pfad an, falls dein Hauptscript woanders liegt!
+        test -n "$ALPACA_API_KEY"
+        test -n "$ALPACA_SECRET_KEY"
+
+    - name: Run Trinity Pipeline
+      run: |
+        export PYTHONPATH="${PYTHONPATH}:."
         python src/run_pipeline.py
+
+    - name: Execute Alpaca Paper Trades
+      env:
+        ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+        ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        ALPACA_ENDPOINT: ${{ secrets.ALPACA_ENDPOINT }}
+        IS_CLOUD_RUN: "True"
+      run: |
+        export PYTHONPATH="${PYTHONPATH}:."
+        python src/ai_ls_allocation/execution.py
+
+    - name: Upload Daily Logs
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: trinity-daily-logs
+        path: |
+          logs/
+          data/features/trinity_signals.csv
+          data/features/trinity_signals.parquet
+          data/features/trinity_history.parquet
+          reports/
