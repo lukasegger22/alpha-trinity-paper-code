@@ -269,6 +269,29 @@ def load_data():
     df = pd.read_parquet(PANEL_PATH)
     return df
 
+def attach_macro_signals(full_df, macro_signals_df):
+    """Attach model predictions by Date/symbol when present, otherwise by row order."""
+    signals = macro_signals_df.reset_index()
+
+    if 'date' in signals.columns:
+        signals.rename(columns={'date': 'Date'}, inplace=True)
+    if 'Symbol' in signals.columns:
+        signals.rename(columns={'Symbol': 'symbol'}, inplace=True)
+
+    if {'Date', 'symbol'}.issubset(signals.columns):
+        signals['Date'] = pd.to_datetime(signals['Date'])
+        return pd.merge(full_df, signals, on=['Date', 'symbol'], how='left')
+
+    signal_cols = [c for c in signals.columns if c not in {'index', 'level_0'}]
+    if len(signals) != len(full_df):
+        raise ValueError(
+            f"Macro signals length mismatch: signals={len(signals)} panel={len(full_df)}"
+        )
+
+    merged = full_df.reset_index(drop=True).copy()
+    merged[signal_cols] = signals[signal_cols].reset_index(drop=True)
+    return merged
+
 def run_trinity_engine():
     print(f"\n--- 🚀 STARTING TRINITY ENGINE (V4 Paper-Exact) ---", flush=True)
 
@@ -286,14 +309,7 @@ def run_trinity_engine():
     macro_signals_df = None
     if MACRO_SIGNALS_PATH.exists():
         macro_signals_df = pd.read_parquet(MACRO_SIGNALS_PATH)
-        # Merge mit full_df
-        full_df = pd.merge(
-            full_df,
-            macro_signals_df.reset_index() if hasattr(macro_signals_df.index, 'names') else macro_signals_df.reset_index(drop=True),
-            left_index=False,
-            right_index=False,
-            how='left'
-        )
+        full_df = attach_macro_signals(full_df, macro_signals_df)
         print(f"   ✅ Macro signals loaded: pred_1d, pred_5d, pred_20d, pred_ridge, voting_signal")
     else:
         print("   ⚠️  Macro signals not found. Using fallback neural ensemble.")
@@ -377,7 +393,12 @@ def run_trinity_engine():
     pivot_returns = full_df.pivot(index='Date', columns='symbol', values='returns_1d').fillna(0)
     daily_vix = full_df.groupby('Date')['VIX'].mean()
     
-    test_dates = pivot_signals.index[pivot_signals.index >= TEST_START_DATE]
+    requested_start = pd.Timestamp(TEST_START_DATE)
+    test_dates = pivot_signals.index[pivot_signals.index >= requested_start]
+    if len(test_dates) == 0 and len(pivot_signals.index) > 0:
+        last_date = pivot_signals.index[-1]
+        print(f"   ⚠️  No rows for {requested_start.date()}; using latest available date {last_date.date()}.")
+        test_dates = pivot_signals.index[pivot_signals.index == last_date]
     optimizer = MarkowitzOptimizer(window_size=60, risk_aversion=0.5, target_vol=0.15)
     
     weights_history = []
@@ -489,6 +510,8 @@ def run_trinity_engine():
         print(f"📅 Date: {weights_df.index[-1].date()}")
         print(f"📊 Final Crisis Score: {crisis_score:.2f}")
         print("="*40)
+    else:
+        raise RuntimeError("Trinity engine produced no portfolio weights.")
 
 if __name__ == "__main__":
     try:
@@ -497,3 +520,4 @@ if __name__ == "__main__":
         print(f"\n❌ FATAL ERROR: {e}")
         import traceback
         traceback.print_exc()
+        sys.exit(1)

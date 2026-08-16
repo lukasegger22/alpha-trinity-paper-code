@@ -62,7 +62,7 @@ def rebalance_portfolio():
         # 3. SOLL-ZUSTAND: Was will die KI haben?
         if not SIGNALS_PATH.exists():
             print("❌ Keine Signale gefunden.")
-            return
+            sys.exit(3)
 
         signals_df = pd.read_parquet(SIGNALS_PATH)
         # Die allerneuesten Signale (letzte Zeile)
