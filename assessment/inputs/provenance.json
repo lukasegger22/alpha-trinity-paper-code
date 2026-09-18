@@ -1,0 +1,19 @@
+{
+  "file": "panel.parquet",
+  "sha256": "d4b6a5f4aeddd07c2e0000fbbf5229d932f9d60411af82f33e3db74710176a77",
+  "snapshot_frozen_date": "2026-09-17",
+  "original_download_date": null,
+  "original_download_date_status": "Not recorded; file modification times cannot establish acquisition time.",
+  "source": "Existing project feature panel; downloader specifies Yahoo Finance via yfinance, auto_adjust=True, including ^VIX.",
+  "price_field": "Adjusted Close stored as Close; dividend and split adjustment per provider, no separate dividend cash flow.",
+  "panel_start": "2020-10-15",
+  "panel_end": "2026-05-08",
+  "train_end": "2021-12-31",
+  "evaluation_start": "2022-01-03",
+  "evaluation_end": "2026-05-08",
+  "universe": ["AGG", "ASML", "DBA", "EFA", "GLD", "IWM", "META", "MSFT", "NVDA", "QQQ", "SPY", "TLT", "UUP", "VNQ", "VWO", "XLE", "XLF", "XLI", "XLP", "XLU", "XLV"],
+  "calendar": "Shared observed US session dates, identical per asset; missing return cells fail validation.",
+  "missing_values": "No missing cells in the delivered feature panel. Historical raw gaps cannot be reconstructed from this snapshot. Additional indicator warmups are causally filled with neutral values.",
+  "universe_history": "Not preregistered. Crypto and other exclusions followed preliminary development. Universe is frozen for this rerun, not claimed to be fixed before first seeing test history.",
+  "limitations": "Current-ticker survivorship, unverified historical download time and raw preprocessing history, vendor revisions. Reproduction is exact from this snapshot, not guaranteed from a fresh vendor download. Research use, not investment advice."
+}

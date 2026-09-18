@@ -12,10 +12,12 @@ dependencies = [
   "pandas>=2.2",
   "numpy>=1.26",
   "scipy>=1.11",
+  "scikit-learn>=1.4",
   "pyyaml>=6.0",
   "matplotlib>=3.8",
   "statsmodels>=0.14",
   "pandas-market-calendars>=4.3",
+  "pyarrow>=15.0",
   "yfinance>=0.2.40",
   "pytest>=8.0",
 ]
@@ -25,7 +27,10 @@ package-dir = {"" = "src"}
 
 [tool.pytest.ini_options]
 addopts = "-q"
-pythonpath = ["src"]
+pythonpath = ["src", "assessment/src"]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+norecursedirs = [".git", ".venv", "assessment_run", "data", "reports"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

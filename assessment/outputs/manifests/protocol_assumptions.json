@@ -1,0 +1,63 @@
+{
+  "project_root": "/Users/lukasegger/Projects/alpha-trinity-paper-code",
+  "panel_path": "assessment/inputs/panel.parquet",
+  "weights_path": "Not used: all weights rebuilt from the frozen panel",
+  "start": "2022-01-03",
+  "end": "2026-05-08",
+  "trading_days": 1091,
+  "symbols": [
+    "AGG",
+    "ASML",
+    "DBA",
+    "EFA",
+    "GLD",
+    "IWM",
+    "META",
+    "MSFT",
+    "NVDA",
+    "QQQ",
+    "SPY",
+    "TLT",
+    "UUP",
+    "VNQ",
+    "VWO",
+    "XLE",
+    "XLF",
+    "XLI",
+    "XLP",
+    "XLU",
+    "XLV"
+  ],
+  "transaction_cost": 0.001,
+  "cost_of_carry": 0.06,
+  "signal_lag_days": 1,
+  "execution": "signal close t; fill close t+1; first return close t+1 to t+2; costs at fill",
+  "train_end_date": "2021-12-31",
+  "test_start_date": "2022-01-01",
+  "features": [
+    "returns_1d",
+    "returns_5d",
+    "volatility_60d",
+    "VIX",
+    "obv_trend",
+    "dist_vwap",
+    "mfi",
+    "bb_pos"
+  ],
+  "defensive_assets": [
+    "UUP",
+    "GLD",
+    "AGG",
+    "TLT",
+    "SHY"
+  ],
+  "growth_ai_assets": [
+    "NVDA",
+    "MSFT",
+    "META",
+    "ASML"
+  ],
+  "vix_column_used": "VIX",
+  "vix_unique_values": 939,
+  "vix_close_unique_values": 939
+}

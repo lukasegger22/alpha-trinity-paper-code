@@ -1,0 +1,39 @@
+{
+  "python": "3.14.5",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "inputs": {
+    "panel.parquet": "d4b6a5f4aeddd07c2e0000fbbf5229d932f9d60411af82f33e3db74710176a77",
+    "provenance.json": "41f9d10ef8b4dd7ecaad205d4eb94f7f5b17483b95978032707772559e5a1055",
+    "shy_adjusted_close.csv": "026f210c0e4ab124521ee79964cb99f6e957d312072a1b71b0f4c117985ed99b",
+    "shy_provenance.json": "fe60eeed05ef2171c136e792aa8e53e871b9ea52cc27ed2bea3162227c03734d"
+  },
+  "paper_source": "assessment_run/writing/abgegebenes_PAPER.tex",
+  "status": "Generated from corrected evidence; PDF must be built and checked separately.",
+  "source_sha256": {
+    "assessment/src/alpha_trinity_assessment/__init__.py": "a5f4515127baed8de062f2d1f2fa8bb391f03c6c5969405a09d5482a61922dc3",
+    "assessment/src/alpha_trinity_assessment/completion.py": "7a16955a51949760f9185816848a858f56b666537a4f3c603a0d41970d616897",
+    "assessment/src/alpha_trinity_assessment/first_three.py": "ac003f86b860c453b6f3246f1ac36293e460fba63b0819bc92d063d3fbeaff04",
+    "assessment/src/alpha_trinity_assessment/robustness_repro_audit.py": "d718b3366ac74f50afa2ba0217c1454256b5dbd4d2e54f7ede7a4c03e9910763",
+    "assessment/src/alpha_trinity_assessment/submission.py": "9997b597d256d69c43ae3dc021f82c219cfd961b72b648e84e7bdde23fe0b9c8"
+  },
+  "protocol": {
+    "train_end": "2021-12-31",
+    "test_start": "2022-01-01",
+    "test_end": "2026-05-08",
+    "transaction_cost": 0.001,
+    "annual_gross_carry": 0.06,
+    "sessions_per_year": 252,
+    "top_k": 5,
+    "momentum_lookback": 60,
+    "volatility_target": 0.15,
+    "leverage_cap": 1.3,
+    "intermediate_position_filter": 0.03,
+    "exit_guard_sessions": 5,
+    "ensemble_size": 10,
+    "growth_adjustment_speed": 0.1,
+    "caution_threshold": 0.35,
+    "panic_threshold": 0.65,
+    "growth_asset_cap": 0.3,
+    "defensive_asset_cap": 0.65
+  }
+}

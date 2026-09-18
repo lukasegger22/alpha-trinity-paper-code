@@ -1,56 +1,66 @@
-# 🏦 Alpha Trinity: Robust Multi-Asset Allocation under Non-Stationary Regimes
+# Alpha Trinity: Regime-Aware Multi-Asset Allocation
 
-**Status:** Submitted to *Procedia Computer Science* (Elsevier)
+A research project testing whether deterministic crisis control improves a
+cost-aware MLP/Random-Forest allocation rule. Results are historical, not investment
+advice or evidence of a live trading advantage.
 
-This repository contains the codebase and supplementary material for the paper *"Robust Multi-Asset Allocation under Non-Stationary Regimes: A Regime-Aware Ensemble Approach with Dynamic Crisis Control."*
+## Submission
 
-## 📖 Overview
+- Final paper: [PDF](assessment_run/writing/abgegebenes_PAPER.pdf)
+- Canonical source: [LaTeX](assessment_run/writing/abgegebenes_PAPER.tex)
+- Reproduction details: [protocol](assessment/docs/reproducibility.md)
+- Predictor definitions: [features](assessment/docs/feature_documentation.md)
+- Evidence: [tables](assessment/outputs/tables), [figures](assessment/outputs/figures)
+- Frozen inputs and provenance: [inputs](assessment/inputs)
 
-Financial markets exhibit non-stationary behavior, often rendering static trading strategies and pure "black-box" Deep Learning models ineffective during structural breaks (e.g., the 2022 inflation shock). 
+The canonical manuscript and its bibliography, generated tables and eight figures
+are in assessment_run/writing/. All numerical evidence is stored once under
+assessment/outputs/. Internal review notes and duplicate exports are not included.
 
-**Alpha Trinity** is a decoupled algorithmic trading architecture designed to improve out-of-sample robustness and capital preservation. It separates signal generation from risk management by integrating two distinct layers:
-1. **The Hybrid Ensemble:** A predictive model combining Gradient Boosting (XGBoost) and Ridge Regression to capture nonlinear and linear price trends across multiple time horizons.
-2. **The Macro-Crisis Engine:** A deterministic regime filter that dynamically switches the portfolio between "Risk-On" and "Defense" modes based on VIX acceleration and trend breakdowns.
+## Reproduce Offline From the Supplied Snapshot
 
+Use Python 3.14 and TeX Live with latexmk and elsarticle.
 
+    make setup
+    make test
+    make assessment
+    make paper
 
-## 📊 Out-of-Sample Performance (Jan 2022 – Feb 2026)
+Or run make all after installation. The assessment uses the delivered snapshot,
+not a new Yahoo download or saved legacy weights. Numerical manuscript tables
+are generated from the CSV evidence and cross-checked before rendering.
 
-The strategy was tested using a strict Expanding Window Walk-Forward Validation, entirely out-of-sample, including realistic transaction costs (10bps slippage) and dynamic leverage holding costs.
+The main portfolio period is 2022-01-03 through 2026-05-08. Features at close t
+form an order filled at close t+1. The new position first earns the return ending
+t+2. Actual trades include market drift and fees reduce NAV at the fill.
 
-| Metric | S&P 500 (SPY) | Naive ML (No Rules) | Alpha Trinity (Final) |
-| :--- | :--- | :--- | :--- |
-| **Total Net Return** | +51.2% | +98.4% | **+169.3%** |
-| **Sharpe Ratio** | 0.54 | 0.72 | **1.03** |
-| **Max Drawdown** | -33.9% | -41.2% | **-22.5%** |
-| **Cost Drag** | 0.0% | -18.4% | **-6.4%** |
+## Interpretation
 
-*Note the "Cost Killer" effect: The execution logic enforces minimum holding periods and volatility-adjusted rebalancing, reducing estimated cost drag from >18% down to 6.4%.*
+The fixed split favors crisis control on Sharpe and drawdown depth, but not total
+return. Annual expanding and rolling portfolio tests do not confirm consistent
+improvement. Do not replace these mixed findings with older performance numbers.
+The full result and benchmarks are in ablation_study.csv and baseline_comparison.csv.
 
+Original snapshot acquisition time was not recorded. Its checksum and the
+September 2026 freeze date are known. Survivorship, historical design selection,
+simplified execution and lack of a pristine prospective holdout remain disclosed
+limitations. Reproduction is from the exact supplied snapshot, not from an
+assumption that a current vendor download reproduces the past.
 
+## Layout
 
-## 🌍 Asset Universe
+- assessment/src/alpha_trinity_assessment/: canonical research implementation
+- assessment/scripts/: thin command-line entry points and paper-table builder
+- assessment/config/protocol.json: frozen experimental settings
+- assessment/requirements-lock.txt: tested Python dependency versions
+- assessment/inputs/: frozen main panel and separately dated SHY supplement
+- assessment/outputs/: regenerated numerical evidence and plots
+- assessment/docs/: reproduction protocol and feature documentation
+- assessment_run/writing/: final paper and supporting generated assets
+- tests/: offline unit and frozen-snapshot checks
+- src/ai_ls_allocation/: original application/live-trading prototype, not the paper engine
 
-The system trades a diversified universe of highly liquid ETFs and high-conviction mega-caps, explicitly excluding highly volatile cryptocurrencies to optimize risk-adjusted returns:
-* **Equities & Beta:** SPY, QQQ, IWM
-* **Sector Rotation:** XLF, XLI, XLV, XLP, XLU
-* **International:** EFA, VWO, FXI
-* **Growth / Alpha:** NVDA, MSFT, META, ASML
-* **Real Assets:** GLD, XLE, URA, DBA, VNQ
-* **Safe Havens / Hedges:** SHY, VCSH, GOVT, UUP, AGG, TLT, SVXY
-
-## 🚀 Quickstart & Reproducibility
-
-To run the pipeline locally and reproduce the data ingestion, feature engineering, and backtesting:
-
-### 1. Installation
-Ensure you have Python 3.11+ installed. Clone the repository and set up the environment:
-
-```bash
-# Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -U pip
-pip install -e .
+Live-trading automation, credentials and private helper scripts are not included
+in the submission branch. No broker orders are required or sent by the research
+reproduction commands. The original application source is retained for context;
+it is not the canonical reproduction route and its private integrations are omitted.

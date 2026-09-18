@@ -1,0 +1,16 @@
+path,exists,bytes,modified_local,sha256
+assessment/inputs/panel.parquet,True,3345997,2026-09-17T11:55:44,d4b6a5f4aeddd07c2e0000fbbf5229d932f9d60411af82f33e3db74710176a77
+assessment/inputs/provenance.json,True,1652,2026-09-17T11:58:50,41f9d10ef8b4dd7ecaad205d4eb94f7f5b17483b95978032707772559e5a1055
+data/panel.parquet,True,1205932,2026-05-11T13:14:07,1e481cb8a1ebb66a9300a722a686c0c63f0784426b932743b3b8b2d5357c2987
+data/features/panel.parquet,True,3345997,2026-05-11T09:12:30,d4b6a5f4aeddd07c2e0000fbbf5229d932f9d60411af82f33e3db74710176a77
+data/features/trinity_history.parquet,True,48337,2026-05-11T09:12:43,bc16e7f7ef94ced715335735581aaa7f58fa0ee62268bd71c3a958d2631c89d6
+data/features/trinity_signals.parquet,True,48337,2026-05-11T09:12:43,bc16e7f7ef94ced715335735581aaa7f58fa0ee62268bd71c3a958d2631c89d6
+data/features/trinity_signals.csv,True,535,2026-05-11T09:12:43,bd82302f5abf2e133f462ee1ed59d9a9215f38bfb5ec5b5629ce893e115a434b
+config/universes.yaml,True,1262,2026-05-11T14:53:34,b593a2217a0529d8ec43d9d6f119802351c585bffb2bfd8d62e8669635499add
+config/backtest.yaml,True,84,2026-05-11T14:53:34,1e72671c31816695cf0c87e953a462a3f0fd335342f37c7b292534a643b68f5b
+config/costs.yaml,True,516,2026-05-11T14:53:34,f7a7141e2bdb98ed5a8179ed8d8a6a9b4b92a99b1a428fd110b323119b4fc8ec
+src/ai_ls_allocation/data/download.py,True,3250,2026-05-11T14:53:34,d866e6dc9f25d495fae9510175b34cc8d50e72910c9d6efe4294b27f02d979fd
+src/ai_ls_allocation/features/build.py,True,4858,2026-09-15T18:18:45,d4e9b32b4079da42d1a7bdd887343e9f3e3d2b1d98edef55ea2f6d668207e1d9
+src/ai_ls_allocation/engine/bt_trinity.py,True,18828,2026-09-17T12:01:18,3c1d9541d1c63dfd4e99896e5baeb3937fbe43e1b9c47119889e875f45204b48
+assessment/src/alpha_trinity_assessment/first_three.py,True,44262,2026-09-17T14:51:54,ac003f86b860c453b6f3246f1ac36293e460fba63b0819bc92d063d3fbeaff04
+assessment/src/alpha_trinity_assessment/robustness_repro_audit.py,True,33142,2026-09-17T14:50:49,be93e33e2fd659cecb8ad8131bea59928b8cb59b139a5e993dae137c2b858da8

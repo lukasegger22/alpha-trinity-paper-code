@@ -40,7 +40,7 @@ LIVE_SIGNALS_PATH = FEATURE_DIR / "trinity_signals.csv"
 # --- REALITY SETTINGS ---
 TRAIN_END_DATE = "2021-12-31"
 TEST_START_DATE = "2022-01-01"
-COST_OF_CARRY_RATE = 0.05     
+COST_OF_CARRY_RATE = 0.06     
 MIN_POSITION_SIZE = 0.03 
 ENSEMBLE_SIZE = 10 
 MIN_HOLD_DAYS = 5 # <--- NEU: Anti-Churn Regel
@@ -243,6 +243,8 @@ def run_trinity_engine():
     if 'Symbol' in full_df.columns: full_df.rename(columns={'Symbol': 'symbol'}, inplace=True)
     full_df['Date'] = pd.to_datetime(full_df['Date'])
     if 'Volume' not in full_df.columns: full_df['Volume'] = 1.0
+    if 'vix_close' in full_df.columns and ('VIX' not in full_df.columns or full_df['VIX'].nunique(dropna=True) <= 1):
+        full_df['VIX'] = full_df['vix_close']
     full_df = full_df.drop_duplicates(subset=['Date', 'symbol'], keep='last').sort_values(by=['symbol', 'Date'])
     
     # 2. FEATURE ENGINEERING
@@ -276,10 +278,15 @@ def run_trinity_engine():
     features = ['returns_1d', 'returns_5d', 'volatility_60d', 'VIX', 'obv_trend', 'dist_vwap', 'mfi', 'bb_pos']
     full_df = full_df.replace([np.inf, -np.inf], np.nan).fillna(0)
     
-    train_df = full_df[full_df['Date'] < TRAIN_END_DATE]
+    full_df = full_df.sort_values(['symbol', 'Date']).reset_index(drop=True)
+    full_df['target_forward'] = full_df.groupby('symbol')['returns_20d'].shift(-20)
+    full_df['target_end'] = full_df.groupby('symbol')['Date'].shift(-20)
+    train_df = full_df[(full_df['Date'] < TRAIN_END_DATE)
+                       & (full_df['target_end'] <= pd.Timestamp(TRAIN_END_DATE))
+                       & full_df['target_forward'].notna()]
     if len(train_df) > 0:
         X_train = train_df[features].values
-        y_train = train_df['returns_20d'].shift(-20).fillna(0).values 
+        y_train = train_df['target_forward'].values
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train)
         X_all = full_df[features].values

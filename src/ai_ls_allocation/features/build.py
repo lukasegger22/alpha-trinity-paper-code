@@ -79,7 +79,9 @@ def build_features():
             g['TNX_Chg_10d'] = 0
 
         # 2. VIX Features
-        if 'VIX' not in g.columns:
+        if 'vix_close' in g.columns:
+            g['VIX'] = g['vix_close'].ffill()
+        elif 'VIX' not in g.columns:
             g['VIX'] = 15.0 # Neutraler Fallback
         
         # 3. Interaction Features (Das fehlte!)

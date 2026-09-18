@@ -1,0 +1,20 @@
+{
+  "generated": "2026-09-17T14:56:05",
+  "outputs": [
+    "robustness_sensitivity.csv",
+    "crisis_threshold_sensitivity.csv",
+    "dynamic_threshold_sensitivity.csv",
+    "transaction_cost_sensitivity.csv",
+    "prediction_horizon_sensitivity.csv",
+    "holding_period_sensitivity.csv",
+    "leverage_cap_sensitivity.csv",
+    "asset_universe_sensitivity.csv",
+    "safe_haven_sensitivity.csv",
+    "lookahead_timing_audit.csv",
+    "reproducibility.md",
+    "reproducibility_inventory.csv",
+    "lookahead_bias_audit.md",
+    "steps_4_6_summary.md",
+    "remaining_assessment_gaps.md"
+  ]
+}

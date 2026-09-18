@@ -11,3 +11,5 @@ pyyaml
 cvxpy
 matplotlib
 alpaca-py
+pandas-market-calendars
+pytest

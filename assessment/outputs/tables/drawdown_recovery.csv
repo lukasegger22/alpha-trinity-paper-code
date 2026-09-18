@@ -1,0 +1,7 @@
+strategy,max_drawdown,peak_date,trough_date,recovery_date,days_peak_to_trough,days_trough_to_recovery,recovered_by_end,ending_drawdown
+Full Alpha Trinity rebuilt dynamic VIX,-0.18692020041988633,2024-07-10,2024-09-06,2026-01-09,58,490,True,0.0
+Prediction-only MLP/RF dynamic VIX,-0.21713409088350855,2025-02-14,2025-04-04,2025-06-24,49,81,True,0.0
+SPY buy-and-hold,-0.2454655007316383,2022-01-03,2022-10-12,2023-12-13,282,427,True,0.0
+60/40 SPY/AGG,-0.20464099770666866,2022-01-03,2022-10-14,2024-01-25,284,468,True,0.0
+Equal-weight universe,-0.23082490477733586,2022-01-03,2022-10-14,2023-06-14,284,243,True,-0.0010543103487447025
+Defensive basket buy-and-hold,-0.12673578650866923,2022-03-08,2022-10-24,2024-05-15,230,569,True,-0.06188622988524062

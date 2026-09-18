@@ -6,6 +6,65 @@ __pycache__
 data/
 logs/
 reports/
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.spl
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+
+# Local review history and packaged exports (canonical evidence remains tracked).
+**/submission_audit_*.md
+/assessment_run/alpha_trinity_submission.zip
+
+# Local editor artifacts and old draft exports
+/Python
+/Small_Project_paper.pdf
+/assessment/assessment/
+/assessment_run/project/
+/assessment_run/assessment_evidence/
+/assessment_run/reference/
+
 src/ai_ls_allocation/data/fred_macro.py
 src/ai_ls_allocation/data/news_sentiment.py
 src/ai_ls_allocation/trading/alpaca_broker.py
+
+# Local notes and duplicate exports are not part of the submission.
+/assessment/README.md
+/assessment/docs/*
+!/assessment/docs/reproducibility.md
+!/assessment/docs/feature_documentation.md
+/assessment_run/*.md
+/assessment_run/data_inventory.csv
+/assessment_run/run_manifest.json
+/assessment_run/writing/docs/
+/assessment_run/writing/tables/
+/assessment_run/writing/manifests/
+/assessment_run/writing/figures/*
+!/assessment_run/writing/figures/system_architecture.png
+!/assessment_run/writing/figures/crisis_score.png
+!/assessment_run/writing/figures/baseline_equity_curves.png
+!/assessment_run/writing/figures/drawdown_chart.png
+!/assessment_run/writing/figures/gross_exposure_over_time.png
+!/assessment_run/writing/figures/turnover_costs.png
+!/assessment_run/writing/figures/return_by_regime.png
+!/assessment_run/writing/figures/threshold_sensitivity_heatmap.png
+/paper_text.pdf
+/paper_text.tex
+/references.bib
+
+# Editor/build artifacts, legacy model binaries and private credentials.
+/.vscode/
+/.gitignore.save
+*.egg-info/
+/models/
+/API KEY FRED.docx
+/src/check_models.py
+/.github/workflows/run_trinity.yml
+/.github/workflows/trinity_live.yml

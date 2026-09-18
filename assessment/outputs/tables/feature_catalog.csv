@@ -1,0 +1,9 @@
+feature,group,formula,window,purpose,leakage_guard,rf_importance,permutation_mse_increase
+returns_1d,momentum,Close_t / Close_{t-1} - 1,1 trading day,Short-term price movement.,Uses current and past adjusted closes only; evaluated with one-day execution lag.,0.02889396528223782,-8.691402148718643e-06
+returns_5d,momentum,Close_t / Close_{t-5} - 1,5 trading days,Weekly momentum.,Rolling past window only.,0.05976001208851979,6.216165397309367e-05
+volatility_60d,risk,std(returns_1d over 60 days) * sqrt(252),60 trading days,Realized volatility and risk regime.,Trailing volatility only.,0.40118756443707826,0.00042376105238823897
+VIX,macro stress,"VIX close from yfinance ^VIX, mapped from vix_close when needed",same market date,Market fear and volatility stress proxy.,Signal at close t fills at close t+1; first return ends t+2.,0.17274080688863475,2.977751291492723e-05
+obv_trend,volume,20-day pct_change of On-Balance Volume proxy,20 trading days,Volume participation and accumulation/distribution trend.,Cumulative volume sign uses realized return through t only.,0.11431730302557075,4.3488489022001225e-05
+dist_vwap,mean reversion,proxy_price_t / rolling_vwap_20_t - 1,20 trading days,Distance from volume-weighted mean.,Trailing price-volume window only.,0.06901440741411338,-9.399521286234446e-05
+mfi,volume,"Money Flow Index proxy scaled to [0, 1]",14 trading days,Buying/selling pressure.,Trailing positive and negative money flow only.,0.09647478484110708,1.611067980693378e-05
+bb_pos,mean reversion,(proxy_price_t - lower_band_20_t) / (upper_band_20_t - lower_band_20_t),20 trading days,Position inside Bollinger channel.,Trailing moving average and standard deviation only.,0.05761115602273823,-0.00011799430405118761

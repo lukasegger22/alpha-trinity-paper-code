@@ -1,0 +1,7 @@
+strategy,position_runs,avg_holding_days,median_holding_days,min_holding_days,max_holding_days
+Full Alpha Trinity rebuilt dynamic VIX,86,85.18604651162791,31.0,5,440
+Prediction-only MLP/RF dynamic VIX,50,188.0,114.5,6,825
+SPY buy-and-hold,1,1089.0,1089.0,1089,1089
+60/40 SPY/AGG,2,1089.0,1089.0,1089,1089
+Equal-weight universe,21,1089.0,1089.0,1089,1089
+Defensive basket buy-and-hold,4,1089.0,1089.0,1089,1089

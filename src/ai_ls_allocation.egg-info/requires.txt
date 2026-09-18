@@ -1,9 +1,0 @@
-pandas>=2.2
-numpy>=1.26
-scipy>=1.11
-pyyaml>=6.0
-matplotlib>=3.8
-statsmodels>=0.14
-pandas-market-calendars>=4.3
-yfinance>=0.2.40
-pytest>=8.0

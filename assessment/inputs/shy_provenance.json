@@ -1,0 +1,10 @@
+{
+  "source": "Yahoo Finance via yfinance 1.2.0, auto_adjust=True",
+  "download_date": "2026-09-17",
+  "requested_start": "2020-01-01",
+  "requested_end_exclusive": "2026-05-09",
+  "file": "shy_adjusted_close.csv",
+  "sha256": "026f210c0e4ab124521ee79964cb99f6e957d312072a1b71b0f4c117985ed99b",
+  "purpose": "Supplemental SHY panic-only alternative. Not a constituent or predictor in the main frozen universe.",
+  "limitations": "Downloaded later than the main snapshot; provider revisions may differ. Adjusted Close is the return proxy, not an unadjusted historical executable quote."
+}

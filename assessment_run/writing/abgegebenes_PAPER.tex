@@ -1,0 +1,312 @@
+\documentclass[3p,times]{elsarticle}
+\raggedbottom
+\usepackage[bookmarks=false,hypertexnames=false]{hyperref}
+\hypersetup{colorlinks,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\usepackage{amsmath,amssymb,graphicx,booktabs,tabularx,placeins}
+\IfFileExists{assessment_run/writing/generated/results.tex}{\newcommand{\paperroot}{assessment_run/writing/}}{\newcommand{\paperroot}{}}
+\graphicspath{{\paperroot figures/}}
+\input{\paperroot generated/results.tex}
+\journal{AAU 12 ECTS Project Report}
+\makeatletter
+\def\ps@pprintTitle{\let\@oddhead\@empty\let\@evenhead\@empty\let\@oddfoot\@empty\let\@evenfoot\@empty}
+\makeatother
+\newcommand{\resulttable}[1]{\input{\paperroot generated/#1.tex}}
+\newcommand{\resultfigure}[3]{\begin{figure}[htbp]\centering\includegraphics[width=.94\textwidth]{#1}\caption{#2}\label{fig:#3}\end{figure}}
+\begin{document}
+\begin{frontmatter}
+\title{Does a Deterministic Crisis-Control Layer Improve a Cost-Aware MLP/RF Multi-Asset Strategy? Evidence from 2022--2026}
+\author[a]{Lukas Egger}
+\ead{lukasegg@edu.aau.at}
+\address[a]{University of Klagenfurt, Universit\"atsstra\ss e 65--67, 9020 Klagenfurt, Austria}
+\begin{abstract}
+This study tests whether a transparent crisis-control layer improves a prediction-based multi-asset strategy under non-stationary market conditions. Alpha Trinity separates a ten-model ensemble of multilayer perceptrons (MLPs) and random forests (RFs), deterministic crisis rules, and a cost-aware holdings ledger. Signals formed at close $t$ fill at close $t+1$; new holdings first earn the return ending at $t+2$. The simulation charges 10 basis points (bps; 0.10\%) on actual one-way traded notional and 6\% annual carry on gross exposure above one, including rebalancing caused by market drift.
+
+On a frozen 21-asset panel, the fixed-training experiment from 3 January 2022 to 8 May 2026 returns \FullReturn{} net, with a 4\%-reference Sharpe ratio of \FullSharpe{} and maximum drawdown of \FullDrawdown{}. SPY, an exchange-traded fund (ETF) tracking the Standard \& Poor's 500 (S\&P~500) index, returns \SpyReturn{}, with Sharpe \SpySharpe{} and drawdown \SpyDrawdown{}. Prediction-only returns \PredReturn{}, with Sharpe \PredSharpe{} and drawdown \PredDrawdown{}. The crisis layer improves the fixed-split risk profile but reduces total return. Annual expanding and rolling-window portfolio tests do not show a consistent advantage over prediction-only. Asset exclusions, feature ablations and alternative execution assumptions reveal material design dependence. The contribution is a reproducible regime-aware proof of concept, not evidence of universal robustness or a deployable trading advantage. The historical evaluation was inspected during development and is not a pristine strategy-selection holdout.
+\end{abstract}
+\begin{keyword}
+Multi-Asset Allocation \sep Regime Control \sep Machine Learning \sep Backtesting \sep Transaction Costs
+\end{keyword}
+\end{frontmatter}
+
+\section{Introduction}
+Financial return distributions, correlations and volatility change over time. A predictor fitted in one environment can be unreliable in another, while frequent reallocation can consume apparent gains through costs. The practical objective is to study the trade-off between participation in recoveries and defensive behavior during stress, rather than to predict every market movement.
+
+The research question is: \emph{Does an interpretable deterministic crisis-control layer improve a cost-aware MLP/RF multi-asset allocation strategy under non-stationary market regimes?} The primary comparison uses the same prediction engine with and without explicit crisis control. Improvement is assessed separately in net return, Sharpe ratio, maximum drawdown and recovery, not inferred solely from performance against SPY.
+
+Three descriptive hypotheses organize the evaluation: H1, crisis control raises the net Sharpe ratio relative to prediction-only; H2, it reduces drawdown burden; H3, useful historical performance survives modeled frictions and reasonable changes in assumptions. These are not preregistered hypotheses or formal significance claims. The contributions are a modular implementation, explicit execution accounting, and reproducible tests that can also expose unfavorable results.
+
+The two machine-learning (ML) model types have complementary structures: a multilayer perceptron (MLP) is a feedforward neural network, while a random forest (RF) averages decision trees. The glossary in \ref{app:abbreviations} collects abbreviations and short explanations of the main technical terms. Throughout the report, RF denotes Random Forest, not the return reference used in Sharpe calculations.
+
+\section{Related Work}
+Hamilton's regime-switching framework and subsequent financial applications describe changes in the data-generating process \cite{hamilton1989new,guidolin2011markov}. The present crisis score is a deterministic heuristic, not an estimated Markov model or a probability of crisis. Its components and allocation responses can be inspected directly.
+
+Empirical finance studies compare neural networks and tree models for prediction and portfolio tasks \cite{gu2020empirical,krauss2017deep}. Reviews of deep financial forecasting and tabular-data benchmarks motivate testing compact neural/tree ensembles, without implying their superiority transfers to this dataset \cite{sezer2020financial,grinsztajn2022why}. Ridge regression and separate MLP/RF diagnostics provide simpler comparisons.
+
+Simple diversification and volatility-managed portfolios are relevant alternatives to complex allocation \cite{demiguel2009optimal,moreira2017volatility}. Backtest overfitting, repeated testing and temporal leakage require particular care \cite{lopez2018advances,white2000reality,bailey2016probability,harvey2016and}. This study therefore reports mixed evidence, preserves the main configuration during sensitivity analysis, and does not choose the highest-return variant as its final model.
+
+\section{Methodology}
+\resultfigure{system_architecture.png}{System architecture: prediction and deterministic crisis control feed portfolio targets; a separate holdings ledger handles delayed fills, cash, market drift and costs.}{architecture}
+
+\subsection{Data, Universe and Provenance}
+The main input is the project's frozen daily feature panel, delivered as \texttt{assessment/inputs/panel.parquet}. It contains 21 currently identifiable assets on a shared calendar from 15 October 2020 to 8 May 2026. The originating downloader specifies Yahoo Finance through \texttt{yfinance}, with \texttt{auto\_adjust=True} and a separate \texttt{\^{}VIX} download. Daily open, high, low, close and volume (OHLCV) fields describe market prices and trading activity. The Cboe Volatility Index (VIX) is an option-implied market-volatility indicator, used here as a stress proxy. Adjusted \texttt{Close} is the return proxy; provider adjustments incorporate splits and dividends, so no separate dividend payment is added. Adjusted historical prices are not exact executable unadjusted quotes.
+
+The snapshot was frozen for this revision on 17 September 2026. Its original download time was not recorded and cannot be reconstructed from file modification times. A Secure Hash Algorithm 256-bit (SHA-256) checksum identifies the exact input; a fresh vendor download is not guaranteed to recreate it. Historical raw gaps and vendor revisions cannot be fully recovered from the feature snapshot. These are provenance limitations, not missing values silently replaced in the evaluation.
+
+\begin{table}[htbp]\centering\small
+\caption{Frozen main universe: categories, tickers and inclusion rationale.}\label{tab:universe}
+\begin{tabularx}{\textwidth}{llX}\toprule
+Category & Tickers & Role and rationale \\\midrule
+Core indices & SPY, QQQ, IWM & Broad US, growth-heavy and small-cap equity exposure. \\
+Sectors & XLF, XLI, XLV, XLP, XLU & Cyclical and defensive diversification. \\
+International & EFA, VWO & Developed and emerging-market exposure. \\
+Growth stocks & NVDA, MSFT, META, ASML & Selected technology and semiconductor firms; a source of selection risk. \\
+Real assets & GLD, XLE, DBA, VNQ & Gold, energy, agriculture and listed property. \\
+Defensive assets & UUP, AGG, TLT & Dollar and bond alternatives with different stress behavior. \\\bottomrule
+\end{tabularx}\end{table}
+
+The universe was not fixed before all experimentation. Crypto exclusion followed preliminary development; it is not claimed to be an ex-ante choice. Delisted firms and point-in-time ticker histories are not reconstructed. Survivorship and concentration in past winners therefore remain possible. Removing NVDA, the four growth stocks, and non-ETF holdings examines dependence on the chosen stocks. ETF-only and removal of the artificial-intelligence (AI)/growth basket are the same exclusion here, not independent confirmations. These tests restrict holdings but retain the full-universe predictor.
+
+A supplemental SHY adjusted-close series was downloaded on 17 September 2026, with exclusive end date 9 May 2026, solely for the panic-asset sensitivity. Its own checksum and acquisition date are supplied. It is not a predictor or constituent of the main experiment; its later vendor vintage is disclosed.
+
+\subsection{Calendar and Features}
+All instruments are US-listed, including international-exposure ETFs. The snapshot has identical dates per asset, no duplicate date/ticker rows and no missing cells. The loader fails on missing return cells rather than assigning zero. Original feature construction removed incomplete rows after long-window indicators; additional assessment indicators start from the surviving snapshot and use neutral warmups. Dynamic \texttt{vix\_close} replaces a constant stored \texttt{VIX} field. Only current or past observations enter features.
+
+Let $r_t$ be the adjusted simple daily return, $P_t^*=\prod_{s\le t}(1+r_s)$ a per-asset cumulative-return proxy starting at the panel boundary, and $Q_t$ volume. Table~\ref{tab:features} defines all eight predictor inputs. On-balance volume (OBV) summarizes signed trading volume; volume-weighted average price (VWAP) weights prices by volume; the Money Flow Index (MFI) compares positive and negative money flows. The implemented proxies differ from conventional typical-price indicators.
+
+\begin{table}[htbp]\centering\small
+\caption{Active features; all windows count trading sessions.}\label{tab:features}
+\begin{tabularx}{\textwidth}{llX}\toprule
+Feature & Window & Formula and purpose \\\midrule
+Daily return & 1 & $P_t/P_{t-1}-1$, short-term movement. \\
+Weekly return & 5 & $P_t/P_{t-5}-1$, recent momentum. \\
+Volatility & 60 & Sample standard deviation of daily returns times $\sqrt{252}$. \\
+VIX & Current close & Observed market-stress proxy. \\
+OBV trend & 20 & $O_t/O_{t-20}-1$, where $O_t=\sum_{s\le t}\operatorname{sign}(r_s)Q_s$. \\
+VWAP distance & 20 & $P_t^*/(\sum P_s^*Q_s/\sum Q_s)-1$ over the trailing window. \\
+Money-flow proxy & 14 & $1-1/(1+F_t^+/F_t^-)$; flows $P_s^*Q_s$ classified by the sign of $\Delta P_s^*$. \\
+Bollinger position & 20 & $(P_t^*-L_t)/(U_t-L_t)$ with bands $\overline P_t^*\pm2s(P_t^*)$. \\\bottomrule
+\end{tabularx}\end{table}
+
+Zero negative-flow sums and zero Bollinger widths use denominator 0.001. Undefined or infinite OBV changes and VWAP distances become zero. MFI and Bollinger warmups use 0.5. MFI is on a 0--1 scale; Bollinger position is not clipped. These are fixed numerical conventions. The cumulative OBV denominator can amplify small values, motivating the importance and ablation checks. Raw prices and auxiliary efficiency statistics are not active predictor inputs.
+
+\subsection{Prediction Engine}
+The target is the same-asset 20-session forward simple return,
+\begin{equation}y_{i,t}^{(20)}=P_{i,t+20}/P_{i,t}-1.\end{equation}
+It is not a log or excess return. Terminal labels remain missing. Training requires feature date $t<$ 31 December 2021 and target end no later than that cutoff. The 10- and 40-session sensitivity runs recompute both target values and end dates; labels crossing the cutoff are removed for the actual horizon.
+
+Each input uses a mean and population standard deviation fitted only on eligible training rows. Ten model predictions are equally averaged: five MLPs and five RFs. An exponentially weighted moving average (EWMA) smooths the predictions, giving more weight to recent observations. The allocation signal is
+\begin{equation}s_{i,t}=50\,\operatorname{EWMA}_{\alpha=1/3,\,adjust=False}(\widehat y_{i,t}).\end{equation}
+The smoothing span is five observations, not a finite five-day window. The factor 50 is an inherited sizing convention. There is no post-hoc return calibration; ranks, signs and magnitudes all affect allocation.
+
+The MLP uses the rectified linear unit (ReLU), $\max(0,x)$, as its hidden-layer activation. Adam (adaptive moment estimation) updates the network weights; L2 regularization penalizes squared weights to discourage large coefficients.
+
+\begin{table}[htbp]\centering\small
+\caption{Model settings. Unlisted defaults are fixed by the supplied dependency lock.}\label{tab:models}
+\begin{tabularx}{\textwidth}{lX}\toprule
+Component & Setting \\\midrule
+MLP & Five regressors; hidden layers (64,32), ReLU, Adam, squared error, learning rate 0.001, L2 alpha 0.0001, batch size min(200, training rows), maximum 200 epochs, shuffle enabled, no early-stopping validation split; seeds 42--46. \\
+Random Forest & Five regressors; 30 trees each, max depth 8, squared error, bootstrap enabled, all features eligible at each split, min split 2, min leaf 1; seeds 47--51. \\
+Ridge & Alpha 1.0, same train-only scaler; diagnostic rather than a selected replacement. \\
+Main training & One pre-2022 fit, no test-period hyperparameter search. Historical design choices were nevertheless informed by development experiments. \\
+Walk-forward & Annual refits of all ten models and scaler; expanding or trailing two-calendar-year history; labels purged at every cutoff. \\
+Feature diagnostics & Full-ensemble group ablations; RF impurity and five-repeat held-out permutation importance. These do not select the final features. \\\bottomrule
+\end{tabularx}\end{table}
+
+\subsection{Deterministic Crisis Control}
+The score combines trailing SPY information and VIX:
+\begin{equation}C_t=\min(1,0.25T_t+0.20V_t+0.20D_t+0.15A_t+0.10M_t).\end{equation}
+$T_t=1$ if the 50-session simple moving average (SMA) is below the 200-session SMA; otherwise 0.5 if SPY is below its 50-session SMA, and zero otherwise. $V_t$ is 1 for VIX above 30, 0.5 above 20, and zero otherwise. $D_t$ is drawdown from the trailing 252-session maximum divided by 0.15, clipped to [0,1]. $A_t=\operatorname{clip}(2(\mathrm{VIX}_t/\mathrm{VIX}_{t-5}-1),0,1)$. $M_t$ is one if 20-session momentum is less than half the 60-session momentum. The components sum to at most 0.90; the score is not a calibrated probability. Warmups use zero score before 200 observations and zero drawdown component until sufficient 252-session history.
+
+\begin{table}[htbp]\centering\small
+\caption{Crisis rules. Actual exposure can be below the desired budget after clipping, gating and smoothing.}\label{tab:crisis}
+\begin{tabularx}{\textwidth}{llX}\toprule
+Regime & Score & Allocation and response \\\midrule
+Growth & $C_t<0.35$ & Signed signal sizing; desired gross 1.30, 1.10, 1.00 or 0.70 for VIX below 15, 20, 25 or otherwise; 10\% adjustment speed. \\
+Caution & $0.35\le C_t<0.65$ & Positive Top-5 signal basket weighted 0.40 plus UUP weighted 0.25, normalized to desired gross 0.85; 30\% speed. \\
+Panic & $C_t\ge0.65$ & UUP 0.50 and GLD 0.30, gross 0.80; immediate target replacement bypasses holding and cost gates. \\\bottomrule
+\end{tabularx}\end{table}
+
+Equality within $10^{-12}$ enters the upper regime to avoid floating-point inconsistency. UUP and GLD represent dollar and gold defenses; neither guarantees safety. Bonds, SHY and cash are tested separately.
+
+\subsection{Portfolio Construction}
+In growth, a positive signal is multiplied by 1.2 if trailing 60-session momentum is positive. The trailing 252 daily returns (at least 60 required) give win fraction $p_i$ and mean-win/absolute-mean-loss ratio $b_i$. Preliminary signed size is
+\begin{equation}q_i=\operatorname{sign}(s_i)|s_i|\min\{0.25,\max[0,\tfrac12(p_i-(1-p_i)/b_i)]\}.\end{equation}
+An asset with no wins or no losses receives zero. If all sizes vanish, positive Top-5 signals form a normalized fallback. Sizes are clipped to $[-0.30,0.30]$, gross-normalized, and components below 3\% removed. This is an \emph{intermediate filter}, not a minimum final weight. The desired exposure multiplies the remaining basket.
+
+Non-panic targets pass a five-session guard against closing positions above 1\% or reversing their sign. Partial reductions are allowed; panic and hard bounds override the guard. Entries are tracked from target activation, with holdings subsequently delayed by execution. This is an anti-churn exit guard, not a minimum holding claim about every share lot. A second heuristic gate accepts a target only when
+\begin{equation}\sum_i(q_i-w_i)\overline r_{i,20}\ \ge\ 2c\sum_i|q_i-w_i|,\end{equation}
+using trailing mean daily returns. This is a rough benefit proxy, not a calibrated profitability forecast. Smoothing then combines the previous and proposed target at the regime's adjustment speed.
+
+Hard bounds are applied \emph{after} smoothing: absolute asset weight at most 0.30 in growth and 0.65 in defensive regimes, and gross exposure no larger than both regime budget and selected cap. Clipped capital remains cash, without upward renormalization. The defensive bound permits the UUP panic allocation and makes concentration explicit. There is no guaranteed lower exposure floor. Shorts are possible in growth and can persist during a gradual caution transition; panic is long-only. Cash is $1-\sum_iw_i$, with zero credited interest. The main gross cap of 1.30 is an experimental constraint, not an optimal leverage claim.
+
+\subsection{Execution and Self-Financing Costs}
+A signal at close $t$ fills at close $t+1$ and cannot earn the intervening close-to-close move. New holdings first affect the return ending at $t+2$; fees occur at the $t+1$ fill. The first evaluation session is cash for all comparisons. No terminal liquidation is imposed.
+
+At each session, starting net asset value (NAV), the portfolio's equity value, is normalized to one with existing weights $h_i$. After returns $r_i$, asset values are $a_i=h_i(1+r_i)$. Carry is $k=(0.06/252)\max(\sum_i|h_i|-1,0)$ and pre-trade NAV is $v=1+\sum_i h_ir_i-k$. For yesterday's target $w_i$, fee $f$ solves
+\begin{equation}f=c\sum_i|w_i(v-f)-a_i|,\qquad c=0.001.\end{equation}
+The ledger solves this fixed point numerically. Traded notional is $\Delta_i=w_i(v-f)-a_i$ in starting-NAV units, turnover is $\sum_i|\Delta_i|$, and net return is $v-f-1$. Market drift thus generates correctly charged rebalances even when daily targets are unchanged. No one-half factor is used: a complete asset switch costs approximately 20 bps at 10 bps per side.
+
+Gross-exposure carry is a financing \emph{proxy}, not a broker account model. Separate stock-loan fees, cash interest, taxes, liquidity constraints and variable spreads are omitted. The 10 bps/6\% assumptions are not observed fills or universal margin rates. Buy-and-hold portfolios trade only at the opening fill and drift thereafter; constant-mix portfolios rebalance daily with drift costs.
+\FloatBarrier
+
+\section{Experimental Protocol}
+The fixed model uses available pre-2022 panel history and tests 1091 sessions from 3 January 2022 through 8 May 2026. This is out-of-sample for model fitting, not untouched by strategy development. The limited late-2020/2021 training history is important. The September revision corrects implementation and reporting defects without choosing new parameters to maximize test returns. Corrections and sensitivity checks cannot restore a pristine holdout.
+
+Prediction-only keeps the same MLP/RF features (including VIX), sizing, smoothing and costs but removes both regime switching and explicit VIX exposure control. Its desired gross budget is one. This removes the deterministic control layer, not every stress predictor. Crisis-only uses no ML predictions: equal weights across non-defensive assets in growth, trailing-momentum Top-5 in caution, and the same panic rules. No-cost removes charged trading/carry costs while preserving full-model targets and gate decisions. No-leverage scales those targets down only if gross exceeds one. Separate cap/cost sensitivities rebuild decisions.
+
+Benchmarks are SPY buy-and-hold; daily 60/40 SPY/AGG and equal-weight universe; daily Top-5 by trailing 60-session return; SPY targeting 15\% annual volatility from a 60-session window, capped at 1.30; daily inverse-volatility weights; and a buy-and-hold equal UUP/GLD/AGG/TLT basket. Inverse volatility is a diagonal-risk proxy, not covariance-based equal-risk contribution. Warmups use pre-evaluation history. All opening costs and rebalances are charged consistently.
+
+Sensitivity covers the threshold grid
+\[\{0.30,0.35,0.40\}\times\{0.60,0.65,0.70\}.\]
+Further tests vary costs at 5/10/20/50 bps, exit guards at 0/3/5/10 sessions, caps at 1.00/1.15/1.30/1.50, horizons at 10/20/40 sessions, asset exclusions and defensive alternatives. Dynamic thresholds use prior scores only, 126 sessions with at least 63 observations, 60th/85th percentiles clipped to [0.20,0.55]/[0.45,0.85], and a minimum gap of 0.05. Fixed thresholds apply during warmup. A 1.50 cap may be non-binding because the growth rule never requests more than 1.30.
+
+Walk-forward tests refit all ten models annually with expanding or two-calendar-year rolling training windows. Features retain causal history; the scaler and label-eligible rows are refitted. Smoothed predictions initialize from history available at each refit; only the next year's signals are used. Portfolios run continuously across fold boundaries without resetting capital. Frozen training cutoffs at end-2021 and end-2022 are additionally compared over identical 2023--2026 dates.
+
+\subsection{Metrics and Uncertainty}
+Net return compounds daily returns. The compound annual growth rate (CAGR) uses $n/252$ years; arithmetic return and volatility use 252 sessions. Sharpe is $(252\bar r-0.04)/(s(r)\sqrt{252})$, a common 4\% reference although idle cash earns zero. The minimum acceptable return (MAR) for downside calculations is also 4\% annually. Downside deviation is $\sqrt{252\operatorname{mean}[\min(r-0.04/252,0)^2]}$; Sortino uses the matching numerator. Calmar divides CAGR by absolute maximum drawdown (Max DD), including initial NAV one. A drawdown is a loss from a previous wealth peak, not simply a negative daily return.
+
+Cost drag is the percentage-point gap between compounded gross and net returns, not the additive fee sum. Trade counts use executed asset changes above $10^{-6}$ of starting NAV. Holding episodes are same-sign runs above 1\% effective weight; terminal unfinished episodes are retained. Monthly and regime statistics are separate from prediction metrics: daily rank information coefficient (IC), the cross-asset Spearman correlation between predicted and realized returns; Top-$K$ hit rate, the fraction of the $K$ highest-ranked assets with positive realized returns; mean absolute error (MAE); and root mean squared error (RMSE). The latter gives more weight to large prediction errors. The main hit-rate diagnostic uses $K=5$. Overlapping 20-session labels are not independent trials.
+
+The block bootstrap resamples 20-session return blocks into 1000 paths with seed 42. Marginal ranges reflect one history, not selection uncertainty or a paired Sharpe-difference test. Retrospectively chosen scenarios and test-period feature permutations are descriptive. No formal White reality check, family-wise correction or causal identification is claimed.
+\FloatBarrier
+
+\section{Results and Discussion}
+\subsection{Main Comparison}
+\resulttable{metrics}
+\resulttable{baselines}
+\resultfigure{baseline_equity_curves.png}{Cumulative net wealth for the full model and seven benchmarks under common delayed execution, starting wealth one and modeled costs.}{performance}
+The fixed-training full model earns \FullReturn{} versus \SpyReturn{} for SPY. Its volatility is \FullVolatility{}, so risk is not eliminated. Its Sharpe is \FullSharpe{} versus \PredSharpe{} for prediction-only, and maximum drawdown \FullDrawdown{} versus \PredDrawdown{}. Prediction-only nevertheless earns a higher total return, \PredReturn{}. H1 and the drawdown-depth part of H2 receive descriptive support in this split, not uniformly across later protocols.
+
+\subsection{Ablations and Frictions}
+\resulttable{ablations}
+Crisis-only offers a different return/risk balance and can be competitive on Sharpe, limiting the case for complexity. Full-model cost drag is \CostDrag{} percentage points and turnover \FullTurnover{}. Post-sizing caps leave the main full model below unit gross exposure on this path; its fixed-signal no-leverage ablation is consequently identical. This is a non-binding constraint, not proof that leverage never matters.
+
+Unchanged targets can still generate small daily drift rebalances. The exit guard and cost gate control discretionary target changes, not every trade needed to maintain targets. Asset trade counts must not be mistaken for distinct prediction decisions.
+\resultfigure{turnover_costs.png}{Turnover and additive modeled costs, including drift rebalances. Additive fees differ from compounded wealth drag.}{costs}
+\resulttable{monthly}
+\resulttable{yearly}
+
+\subsection{Drawdown, Regimes and Concentration}
+\resultfigure{drawdown_chart.png}{Underwater curves relative to prior high-water marks. Shallower depth does not establish faster recovery from a matched episode.}{drawdown}
+\resulttable{recovery}
+Recovery dates refer to each portfolio's own worst drawdown. Peaks and troughs differ; unrecovered episodes are right-censored. These observations do not justify a blanket faster-recovery claim.
+\resultfigure{crisis_score.png}{Observable crisis score and fixed thresholds. Historical alignment with stress does not prove thresholds were selected independently of that history.}{crisis}
+\resultfigure{gross_exposure_over_time.png}{Net wealth and effective gross exposure. Position caps and cash residuals can leave exposure below the desired regime budget.}{exposure}
+\resulttable{regime}
+\resultfigure{return_by_regime.png}{Conditional returns and exposure. Non-contiguous dates are grouped by the signal responsible for the return interval, not a standalone investable strategy.}{regime}
+Regime returns compound only selected dates. Supplementary regime drawdowns use synthetic concatenated paths, not contiguous episodes. Table~\ref{tab:regime} attributes costs to those same return dates, which can include a closing trade from a later signal. Allocation snapshots and top-holding concentration are supplied separately. Defensive and growth-stock concentration remains relevant despite hard bounds.
+\FloatBarrier
+
+\subsection{Sensitivity and Historical Stress}
+\resulttable{robustness}
+\resultfigure{threshold_sensitivity_heatmap.png}{Sharpe across the nearby-threshold grid; no cell is substituted retrospectively for the headline configuration.}{thresholds}
+\resulttable{sensitivity-detail}
+Universe tests reveal dependence on the chosen stocks but do not remove indirect exposure inside ETFs or retrain on a new universe. Panic cash earns zero; SHY uses a separately documented later download. Single-asset defenses can remain below the nominal budget because the 0.65 final asset cap is preserved.
+
+Costs are varied with both fixed targets and rebuilt gate decisions. The latter can be non-monotonic because trade acceptance changes, so fixed-path results isolate pure fee effects.
+\resulttable{scenarios}
+The windows cover the 2022 inflation downturn, 2023--2024 recovery/AI rally, 2023 bond selloff, 2022 commodity shock, August 2024 volatility spike, 2025 correction and early-2026 volatility. They are slices of one history, not independent simulations or forecasts. Overlapping windows are not independent confirmations.
+
+\subsection{Prediction and Feature Evidence}
+\resulttable{prediction}
+Small positive rank correlations indicate weak ordering information rather than precise forecasts. Ridge is competitive on ranking; the ensemble does not dominate every diagnostic. Top-5 positive-return hit rate depends on market direction and should be compared with the all-asset positive-rate series in the supplementary table.
+\resulttable{features-ablation}
+All group ablations retrain the same five MLPs and five RFs. Removing volatility/VIX predictor inputs can improve fixed-split performance even when RF impurity importance ranks them highly. The crisis layer still sees VIX in that test. Predictive importance is not proof of incremental portfolio value. Impurity/permutation importance, training-only correlations and a heatmap are supplied. Correlated variables dilute permutation importance; individual-row permutation breaks temporal structure, so it is descriptive rather than a significance test.
+
+\subsection{Walk-Forward and Simpler Alternatives}
+\resulttable{walk-forward}
+Annual expanding and rolling-window results weaken a universal interpretation of H1/H2. Prediction-only performs better on Sharpe in these tests, and full-model drawdown is not consistently smaller. Refitting changes the signal distribution and its interaction with crisis rules. The fixed-split result is therefore not a stable deployment advantage.
+\resulttable{advanced}
+Confidence sizing scales full targets by $1/(1+|\widehat y_{MLP}-\widehat y_{RF}|/0.05)$ per asset; even defensive positions can shrink. The simpler rule selects the two strongest trailing-60-session assets among SPY, EFA, AGG, GLD and UUP, equally weighted, with a panic override of 0.40 GLD and 0.40 UUP. It has no predictor, Kelly sizing or gate. Long-only prediction Top-5 equally weights the highest signals, including negative ones if necessary, with unit gross target. These exploratory alternatives test whether extra machinery is justified; none replaces the fixed main configuration.
+\resulttable{bootstrap}
+Bootstrap ranges cannot remove selection or repeated-testing bias. Overlapping marginal Sharpe ranges are not a formal test. The conclusion remains limited to an explicitly qualified historical comparison.
+\FloatBarrier
+
+\section{Limitations}
+\begin{table}[htbp]\centering\small
+\caption{Limitations, consequences and controls.}\label{tab:limitations}
+\begin{tabularx}{\textwidth}{lXX}\toprule
+Risk & Consequence & Control and remaining boundary \\\midrule
+Selection/survivorship & Winners and removed candidates can exaggerate returns. & Frozen snapshot and removal tests; no point-in-time delisted universe. \\
+Historical reuse & Repeated trials increase false-discovery risk. & Full variant reporting, no winner substitution; no untouched holdout or correction. \\
+Daily execution & Shocks occur before next-close fills. & Explicit ledger and price-jump tests; no intraday protection. \\
+Whipsaw/gates & False regimes and exit guards delay useful trades. & Threshold/holding tests; panic bypasses gates but cannot reverse earlier losses. \\
+Costs/shorting & Spreads, financing and stock-loan fees vary. & Cost grid and disclosed proxy; no broker-fill or liquidity validation. \\
+Limited history & One path cannot cover future regimes. & Walk-forward, scenarios and bootstrap still reuse one history. \\
+Provenance & Original acquisition and raw cleaning cannot be fully verified. & Checksummed snapshot; original download date unknown, fresh data may differ. \\\bottomrule
+\end{tabularx}\end{table}
+
+The crisis score remains hand-designed. Adaptive thresholds were tested, not proved superior. Modest forecasting quality and training-period sensitivity limit ensemble claims. The main full model incurs no carry on this path because effective gross stays below one; other variants can incur it. That does not validate the carry assumption for live leverage.
+
+\section{Conclusion}
+Alpha Trinity separates prediction, deterministic control and execution in a testable framework. The corrected fixed-training experiment delivers \FullReturn{} net, Sharpe \FullSharpe{} and drawdown \FullDrawdown{}. Relative to prediction-only, it trades total return for a better fixed-split Sharpe and drawdown depth. Historical performance against SPY is favorable, but SPY alone is insufficient to justify complexity.
+
+The research question receives a qualified answer: crisis control can improve the risk profile in this fixed experiment, but annual expanding and rolling-window tests do not establish consistent improvement. Training history, assets, selection and execution assumptions materially affect the result; a simple deterministic alternative can be competitive. The contribution is a reproducible proof of concept and documented weaknesses, not a universally robust system.
+
+Future work should preregister a genuinely prospective period, reconstruct point-in-time membership, improve execution/short-financing data, and estimate paired incremental performance with selection correction. Completed walk-forward and dynamic-threshold diagnostics should be extended to new data, not relabeled as future work or used to choose a favorable historical winner.
+\FloatBarrier
+\appendix
+\section{Reproduction and Supporting Evidence}
+The canonical implementation is \texttt{assessment/src/alpha\_trinity\_assessment}. The separate live-trading prototype under \texttt{src/ai\_ls\_allocation} is not the paper engine. Saved historical weights are not inputs to this experiment. The snapshot, SHY supplement, provenance, seeds, dependency lock, tests and generated evidence are supplied.
+
+From the root, \texttt{make test} checks numerical contracts and snapshot integrity; \texttt{make assessment} regenerates evidence and table fragments; \texttt{make paper} compiles the canonical paper and refreshes the root PDF copy. The research environment uses Python 3.14 and \texttt{assessment/requirements-lock.txt}. Numerical tables are generated from comma-separated values (CSV) files, with cross-checks between primary and diagnostic paths. Frozen-input reproduction needs no vendor application programming interface (API) keys or broker connection.
+
+Supplementary evidence includes monthly returns, complete grids, yearly prediction folds, portfolio walk-forward, feature importance/permutation/correlation, regime snapshots, trades, exposures, concentration and recovery. A separate completion checklist is not part of this paper. Tests cover delayed fills, self-financing costs, drift, horizon-specific purging, train-only scaling, regime boundaries, session counts and position bounds. They reduce specific risks, not prove the absence of every error.
+
+The experiment can be summarized by the following pseudocode:
+\begin{verbatim}
+load and validate frozen input panel and date range
+build trailing features and same-asset forward labels
+fit scaler and models only on labels known by the cutoff
+for each signal close: score, classify regime, construct bounded target
+for each session: mark existing assets to the close and charge carry
+                  fill yesterday's target against drifted holdings
+                  solve fees, update cash and NAV, record trades
+repeat prescribed ablations, sensitivities and chronological refits
+generate tables and figures from the resulting evidence
+\end{verbatim}
+The Alpaca prototype is outside this historical study. No broker orders or new live-performance claims are made in preparing this submission.
+\clearpage
+\section{Abbreviations and Reading Guide}\label{app:abbreviations}
+Abbreviations are expanded when introduced and collected here for reference. Asset tickers such as SPY, GLD, UUP and NVDA identify instruments, not model types; Table~\ref{tab:universe} groups the main instruments by their roles. RF always means Random Forest; the annual 4\% return reference is written explicitly in metric labels.
+
+\begingroup\small
+\renewcommand{\arraystretch}{1.12}
+\noindent\begin{tabularx}{\textwidth}{@{}p{0.13\textwidth}X@{}}\toprule
+Term & Meaning and use in this report \\\midrule
+Adam & Adaptive moment estimation; optimizer used to train the neural networks. \\
+AI & Artificial intelligence; used in the growth-stock basket label and the tool-use declaration. \\
+API & Application programming interface; programmatic access to a data or broker service. \\
+bps & Basis points: 1 bp is 0.01 percentage points; 10 bps is 0.10\%, or 0.001 as a fraction. \\
+CAGR & Compound annual growth rate; the annual rate equivalent to compounded wealth growth. \\
+CSV & Comma-separated values; the format of the numerical evidence tables. \\
+DD & Drawdown: loss from a prior wealth peak. Max DD is the deepest such loss. \\
+ETF & Exchange-traded fund; a pooled investment traded on an exchange. \\
+EWMA & Exponentially weighted moving average; smoothing that emphasizes recent observations. \\
+IC & Information coefficient; daily rank IC is the cross-asset Spearman correlation of predicted and realized returns. \\
+L2 & Squared-weight regularization; a penalty discouraging large model coefficients. \\
+MAE & Mean absolute error; average absolute difference between predicted and realized returns. \\
+MAR & Minimum acceptable return; the reference used for downside deviation and Sortino, here 4\% annually. \\
+MFI & Money Flow Index; the implemented daily money-flow proxy is defined in Table~\ref{tab:features}. \\
+ML & Machine learning; the data-fitted prediction component, distinct from deterministic crisis rules. \\
+MLP & Multilayer perceptron; a feedforward neural network used here for return regression. \\
+NAV & Net asset value; portfolio assets and cash, net of liabilities. \\
+OBV & On-balance volume; volume accumulated with the sign of price movements. \\
+OHLCV & Open, high, low, close and volume; the fields of a daily market-data bar. \\
+ReLU & Rectified linear unit; the neural-network activation $\max(0,x)$. \\
+RF & Random Forest; an ensemble of decision trees, not an abbreviation for the Sharpe reference rate. \\
+RMSE & Root mean squared error; square root of average squared prediction error. \\
+S\&P~500 & Standard \& Poor's 500; the US equity index tracked by the SPY benchmark. \\
+SHA-256 & Secure Hash Algorithm with a 256-bit output; a checksum for identifying exact input files. \\
+SMA & Simple moving average; an equally weighted average over a trailing window. \\
+Top-$K$ & Rank-based selection with basket size $K$; the main selection and hit-rate diagnostics use five assets. \\
+VIX & Cboe Volatility Index; option-implied market volatility, used here as a stress proxy. \\
+VWAP & Volume-weighted average price; the daily proxy used here is defined in Table~\ref{tab:features}. \\\bottomrule
+\end{tabularx}
+\endgroup
+\clearpage
+\section*{Declaration of Generative AI and AI-assisted Technologies}
+AI-assisted writing and coding tools, including Gemini and ChatGPT/Codex, were used during development and revision for drafting, code changes, documentation and reproducibility checks. The author is responsible for reviewing the final manuscript, understanding the methods and verifying the submitted results and interpretation.
+\bibliographystyle{elsarticle-num}
+\IfFileExists{assessment_run/writing/references.bib}{\bibliography{assessment_run/writing/references}}{\bibliography{references}}
+\end{document}
